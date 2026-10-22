@@ -87,7 +87,8 @@ internal static class NativeSmoke
             if (S(clash.Report, "target") != "clash" || File.Exists(Path.Combine(recovered.OutputPath, "HomeChain.MC2DNS.yaml")) || !recovered.OutputIsCurrent()) throw new BuildException("Clash 目标与失效 DNS 清理原生自检失败");
             Task.Run(() => CheckEntranceGroups(workspace)).GetAwaiter().GetResult();
             Task.Run(() => CheckDnsPrivacy(workspace)).GetAwaiter().GetResult();
-            File.WriteAllText(resultPath, O("ok", true, "pages", pages, "project_crud", true, "ordering", true, "restore_and_subscription_identity", true, "classified_rules", true, "readonly_example", true, "rule_defaults", true, "parameter_inspection", true, "parameter_remote_urls", true, "standalone_subscription_pull", true, "forced_subscription_cache_fallback", true, "residence_proxy_probe", true, "rule_semantics", true, "rule_semantics_v2", true, "domain_list_auto_detection", true, "clash_target_and_dns_cleanup", true, "airport_entrance_groups", true, "dns_privacy", true, "dns_default_recovery", true, "dependency_fingerprint", true, "proxy_count", I(built.Report, "proxy_count", 0), "mode", "native UI initialization, isolated builds and loopback rule/subscription/proxy requests; no window shown").ToJsonString(JsonOptions));
+            Task.Run(() => CheckCustomGroupOrder(workspace)).GetAwaiter().GetResult();
+            File.WriteAllText(resultPath, O("ok", true, "pages", pages, "project_crud", true, "ordering", true, "custom_group_priority", true, "restore_and_subscription_identity", true, "classified_rules", true, "readonly_example", true, "rule_defaults", true, "parameter_inspection", true, "parameter_remote_urls", true, "standalone_subscription_pull", true, "forced_subscription_cache_fallback", true, "residence_proxy_probe", true, "rule_semantics", true, "rule_semantics_v2", true, "domain_list_auto_detection", true, "clash_target_and_dns_cleanup", true, "airport_entrance_groups", true, "dns_privacy", true, "dns_default_recovery", true, "dependency_fingerprint", true, "proxy_count", I(built.Report, "proxy_count", 0), "mode", "native UI initialization, isolated builds and loopback rule/subscription/proxy requests; no window shown").ToJsonString(JsonOptions));
             return 0;
         }
         catch (Exception ex) { File.WriteAllText(resultPath, O("ok", false, "error_type", ex.GetType().Name, "error", ex is BuildException ? ex.Message : "原生界面或生成自检失败").ToJsonString(JsonOptions)); return 1; }
@@ -138,6 +139,28 @@ internal static class NativeSmoke
         if (File.ReadAllText(enhanced.OutputPath) != before || File.Exists(Path.Combine(session.OutputPath, "HomeChain.MC2DNS.yaml"))
             || File.ReadAllText(Path.Combine(session.OutputPath, "HomeChain" + DnsPrivacy.DefaultSuffix)) != DnsPrivacy.DefaultText()
             || !File.Exists(Path.Combine(session.OutputPath, "HomeChain" + DnsPrivacy.GuideSuffix))) throw new BuildException("默认 DNS 恢复原生自检失败");
+    }
+    static async Task CheckCustomGroupOrder(string workspace)
+    {
+        var session = new WorkspaceSession(workspace, "EntranceSmoke");
+        var imported = ImportedRuleSets.Parse(System.Text.Encoding.UTF8.GetBytes("DOMAIN,native-import-order.example,DIRECT"), "Ordering");
+        var policy = O("rule_source", "subscription", "extra_rules_enabled", true, "order", A("direct", "reject", "proxy"),
+            "first", new System.Text.Json.Nodes.JsonArray(O("match", "DOMAIN,native-group-order.example", "action", "REJECT")),
+            "reject", A("DOMAIN,native-import-order.example"),
+            "remote_rules", new System.Text.Json.Nodes.JsonArray(O("name", "DirectList", "file", "direct-order.list", "action", "DIRECT")),
+            "rule_sets", new System.Text.Json.Nodes.JsonArray(imported));
+        File.WriteAllText(Path.Combine(session.ProjectPath, "direct-order.list"), "DOMAIN,native-group-order.example\n");
+        session.Documents["policy.yaml"].Set(policy); session.Save();
+        foreach (var order in new[] { new[] { "direct", "reject", "proxy" }, new[] { "reject", "direct", "proxy" } })
+        {
+            policy["order"] = A(order); session.Documents["policy.yaml"].Set(policy); session.Save();
+            var built = await new BuildEngine().BuildProjectAsync(workspace, "EntranceSmoke", new(Offline: true));
+            var rules = L(Map(YamlData.Read(built.OutputPath), "group order"), "rules").Select(x => S(x)).ToArray();
+            string expected = order[0] == "direct" ? "DIRECT" : "REJECT";
+            if (rules.First(x => x.StartsWith("DOMAIN,native-group-order.example,")) != "DOMAIN,native-group-order.example," + expected
+                || rules.First(x => x.StartsWith("DOMAIN,native-import-order.example,")) != "DOMAIN,native-import-order.example," + expected
+                || rules[^1] != "MATCH,代理出口") throw new BuildException("自定义整组优先级原生自检失败");
+        }
     }
     static async Task CheckResidenceProbeAsync()
     {

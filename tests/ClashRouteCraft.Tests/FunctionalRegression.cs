@@ -112,7 +112,7 @@ static class FunctionalRegression
             File.AppendAllText(built.OutputPath, "# external edit"); await Reject(() => Task.Run(() => s.ReadValidatedOutput("HomeChain.yaml")));
             await Reject(() => Task.Run(() => s.ReadValidatedOutput("../settings.yaml")));
         });
-        await test("Manual rules remain ahead of remote rules regardless of group order", async () =>
+        await test("A higher-priority remote group overrides a lower-priority manual group", async () =>
         {
             using var f = new Fixture(); var s = new WorkspaceSession(f.Root, "SampleOne"); var p = s.Policy;
             File.WriteAllText(Path.Combine(f.Project, "direct.txt"), "DOMAIN-SUFFIX,ordering.example\n");
@@ -120,7 +120,7 @@ static class FunctionalRegression
             p["remote_rules"] = A(new JsonNode?[] { O("name", "direct-list", "file", "direct.txt", "action", "DIRECT") }); s.Documents["policy.yaml"].Set(p); s.Save();
             var result = await new BuildEngine().BuildProjectAsync(f.Root, "SampleOne", new(Offline: true));
             var rules = L(Map(YamlData.Read(result.OutputPath), "config"), "rules");
-            Check(rules.Where(x => S(x).Contains("ordering.example")).Select(x => S(x)).SequenceEqual(["DOMAIN-SUFFIX,ordering.example,默认代理", "DOMAIN-SUFFIX,ordering.example,DIRECT"]));
+            Check(rules.Where(x => S(x).Contains("ordering.example")).Select(x => S(x)).SequenceEqual(["DOMAIN-SUFFIX,ordering.example,DIRECT", "DOMAIN-SUFFIX,ordering.example,默认代理"]));
         });
         await test("Residence HTTP probe uses explicit proxy and bounds failures, body and timeout", async () =>
         {

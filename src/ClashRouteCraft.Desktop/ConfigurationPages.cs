@@ -281,8 +281,8 @@ public sealed partial class MainWindow
             if (!B(policy, "extra_rules_enabled", true)) content.Children.Add(Note("附加规则已停用，内容仍保留。当前完全使用主订阅规则；可随时重新启用。"));
         }
         string GroupName(string group) => group switch { "direct" => baseline ? "本地直连" : "直连", "reject" => "拦截", _ => "代理" };
-        var orderHint = Label("先匹配全部手工名单，再匹配全部 URL 名单；各阶段内按组从上到下。", true, 12);
-        ToolTip.SetTip(orderHint, baseline ? "个人附加规则 → 归并后的主订阅规则。自定义名单相互冲突时，按现有顺序先命中先执行；同一域名尽量只放在一类中。" : "高级前置规则 → 全部手工名单 → 全部远程名单 → 导入规则集 → 国内分流 → 默认动作；先命中先执行。"); content.Children.Add(orderHint);
+        var orderHint = Label("按组从上到下匹配：上一组的全部规则优先于下一组，包含手工、URL 和已导入规则。", true, 12); orderHint.Name = "RuleOrderHint";
+        ToolTip.SetTip(orderHint, baseline ? "全部自定义规则按下方三组排序，随后匹配主订阅规则。旧 first 和导入规则按实际动作归组，不再单独置顶。组内保留原有相对顺序，冲突时先命中的规则生效。" : "全部自定义规则按下方三组排序，随后匹配国内分流和默认动作。旧 first 和导入规则按实际动作归组；组内保留原有相对顺序，冲突时先命中的规则生效。"); content.Children.Add(orderHint);
         var imported = ImportedRuleSets.Sets(policy);
         if (!baseline || imported.Count > 0)
         {

@@ -971,6 +971,7 @@ await SubscriptionRuleImportRegression.Run(Test);
 await BuiltInResourcesRegression.Run(Test);
 await SubscriptionBaselineRegression.Run(Test);
 await UnifiedRoutingRegression.Run(Test);
+await GroupPriorityRegression.Run(Test);
 await SubscriptionHostsRegression.Run(Test);
 await DnsPrivacyRegression.Run(Test);
 await RuleSemanticsRegression.Run(Test);

@@ -232,7 +232,7 @@ static class SubscriptionBaselineRegression
             policy["first"] = A(actions.Select((action, index) => (JsonNode?)O("match", "DOMAIN,r" + index + ".example", "action", action))); f.Write("policy.yaml", policy);
             string inputBefore = File.ReadAllText(Path.Combine(f.Project, "residential.yaml"));
             var output = Map(YamlData.Read((await Build(f)).OutputPath), "output");
-            Check(L(output, "rules").Take(actions.Length).All(x => Rules.SplitFull(S(x))[2] == "代理出口"), "Old explicit proxy action bypasses the unified exit");
+            Check(actions.Select((_, index) => "DOMAIN,r" + index + ".example,代理出口").All(rule => L(output, "rules").Any(x => S(x) == rule)), "Old explicit proxy action bypasses the unified exit");
             Check(File.ReadAllText(Path.Combine(f.Project, "residential.yaml")) == inputBefore, "Output labels changed residential input");
         });
         await test("Generated entrance and residential labels do not overwrite subscription names", async () =>

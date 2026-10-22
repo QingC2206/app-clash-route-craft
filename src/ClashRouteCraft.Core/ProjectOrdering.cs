@@ -5,7 +5,7 @@ namespace ClashRouteCraft.Core;
 
 public static class ProjectOrdering
 {
-    public const int Version = 2;
+    public const int Version = 3;
     public static void NumberSources(JsonObject settings)
     {
         int index = 0;
@@ -16,6 +16,24 @@ public static class ProjectOrdering
         var order = policy["order"] is null ? ["direct", "reject", "proxy"] : L(policy, "order").Select(x => S(x)).ToArray();
         if (order.Length != 3 || !order.ToHashSet().SetEquals(["direct", "reject", "proxy"])) throw new BuildException("policy.order 必须恰好包含 direct、reject、proxy 各一次");
         return order;
+    }
+    // Apply the same group priority to every custom source, after actions have
+    // been resolved. Stable sorting preserves the relative order within a group.
+    public static JsonArray OrderCustomRules(JsonObject policy, JsonArray entries, Func<JsonNode?, string>? ruleText = null)
+    {
+        var order = RuleOrder(policy);
+        int Rank(JsonNode? entry)
+        {
+            var parts = Rules.SplitFull(ruleText is null ? S(entry) : ruleText(entry));
+            string action = parts[parts[0] is "MATCH" or "FINAL" ? 1 : 2];
+            // Custom rules are top-level rules (SUB-RULE is not accepted here).
+            // PASS only continues matching; retain it without treating it as an
+            // outbound choice. Subscription control flow is never reordered.
+            if (action is "PASS" or "PASS-RULE") return -1;
+            string group = action switch { "DIRECT" or "COMPATIBLE" => "direct", "REJECT" or "REJECT-DROP" => "reject", _ => "proxy" };
+            return Array.IndexOf(order, group);
+        }
+        return A(entries.OrderBy(Rank));
     }
     public static string? RemoteGroup(JsonObject spec) => S(spec, "action", "PROXY") switch
     {

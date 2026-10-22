@@ -101,10 +101,13 @@ public static class ProfileCompiler
         }
         number = 0;
         foreach (var raw in L(policy, "supplemental_rules")) { number++; var entry = Map(raw, "补充规则"); AddRule(Rules.WithAction(entry["match"], Action(entry["action"]), inputFormat: "match"), $"supplemental[{number}]", "supplemental"); }
+        candidates = ProjectOrdering.OrderCustomRules(policy, candidates, entry => S(Map(entry, "自定义规则"), "rule"));
         if (B(policy, "domestic_direct", true))
             foreach (string rule in new[] { "GEOSITE,geolocation-!cn," + Action(JsonValue.Create("PROXY")), "GEOSITE,CN,DIRECT", "GEOIP,CN,DIRECT" }) AddRule(rule, "domestic", "baseline");
         AddRule("MATCH," + Action(policy["final"]), "final", "final");
         var (rules, mergeReport) = Rules.MergeRules(candidates);
+        mergeReport["precedence"] = "user_groups_then_fallback";
+        mergeReport["group_order"] = A(orderNames);
         var runtime = M(settings, "runtime");
         if (runtime.Any(x => new[] { "proxies", "proxy-providers", "proxy-groups", "rules", "rule-providers" }.Contains(x.Key))) throw new BuildException("runtime 不能覆盖生成器管理的代理、分组和规则字段");
         var configuration = Merge(O("mixed-port", 7890, "allow-lan", false, "mode", "rule", "log-level", "info", "ipv6", false, "geodata-mode", true, "geodata-loader", "memconservative", "profile", O("store-selected", true)), runtime);

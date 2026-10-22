@@ -133,6 +133,7 @@ public static class SubscriptionBaselineCompiler
                     if (S(entry, "match") == "MATCH") throw new BuildException("附加规则集不能使用 MATCH 覆盖整个订阅，请关闭该规则集的兜底规则");
                     rules.Push(ImportedRuleSets.Rule(entry, Action(JsonValue.Create(ImportedRuleSets.Target(set, entry)))));
                 }
+            rules = ProjectOrdering.OrderCustomRules(policy, rules);
         }
         int extraCount = rules.Count;
         if (rules.Any(x => Rules.SplitFull(S(x))[0] is "MATCH" or "FINAL")) throw new BuildException("附加规则不能使用 MATCH / FINAL 覆盖整个订阅，请删除或停用附加兜底规则");
@@ -153,7 +154,7 @@ public static class SubscriptionBaselineCompiler
             "geo_mode", "subscription", "required_geodata", GeoRules.RequiredDatabases(configuration),
             "proxy_count", proxies.Count, "rule_count", SubscriptionBaseline.RuleCount(configuration), "contains_subscription_urls", false,
             "dns", O("configured", dnsExit.Length > 0, "enabled", dnsExit.Length > 0, "source", dnsExit.Length > 0 ? "privacy" : "client", "proxy_exit", dnsExit, "proxy_references", ProfileCompiler.ValidateDns(configuration)),
-            "rule_merge", O("precedence", "user_extensions_then_primary_subscription", "input_count", rules.Count, "duplicates_removed", 0));
+            "rule_merge", O("precedence", "user_groups_then_primary_subscription", "group_order", B(policy, "extra_rules_enabled", true) ? A(ProjectOrdering.RuleOrder(policy)) : new JsonArray(), "input_count", rules.Count, "duplicates_removed", 0));
         return new(configuration, report);
     }
 }
