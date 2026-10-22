@@ -37,7 +37,7 @@ public sealed partial class MainWindow
                 var source = O("name", name, "url", "", "enabled", true, "priority", list.Count + 1); session.Subscriptions.Add(source); list.Push(source); expandedSource = list.Count - 1;
             }); RenderPage();
         }); add.Name = "AddSource"; add.IsEnabled = !IsBusy;
-        content.Children.Add(Row(add)); content.Children.Add(Label(UsesSubscriptionBaseline() ? "第一个启用的订阅提供规则和原有策略组，其余订阅仅提供节点。上下移动只更换规则来源；机场入口可选聚合组或任一订阅组，各组内自动测速，不按机场优先级分层。默认筛选香港、日本、台湾、新加坡，筛选不改变主订阅原有分组。" : "上方优先，下方备用。勾选的订阅参与生成；点“编辑”填写链接或调整筛选。", true, 13));
+        content.Children.Add(Row(add)); content.Children.Add(Label(UsesSubscriptionBaseline() ? "第一个启用的订阅提供分流规则，归并为本地直连、代理、拦截；其余订阅仅提供节点。上下移动只更换规则来源。机场入口可选聚合组或任一订阅组，组内自动测速；默认筛选香港、日本、台湾、新加坡。所有代理业务使用同一个“代理出口”。" : "上方优先，下方备用。勾选的订阅参与生成；点“编辑”填写链接或调整筛选。", true, 13));
         for (int i = 0; i < sources.Count; i++)
         {
             int index = i; var source = Map(sources[i], "订阅"); string name = S(source, "name"); var snapshot = Label(SnapshotInfo(source), true, 12); Action updateProblems = () => { }; Button? pull = null;
@@ -127,14 +127,16 @@ public sealed partial class MainWindow
         if (M(document, "proxy-providers").Count > 0) throw new BuildException("此文件仍需下载外部节点，请使用更新订阅生成，或选择包含完整节点的文件");
         if (L(document, "proxies").Count == 0) throw new BuildException("所选文件没有可用节点");
         ConfigurationValidation.CacheNodes(L(document, "proxies"));
-        if (UsesSubscriptionBaseline() && !SubscriptionBaseline.IsPrimary(session.Settings, name)) document = O("proxies", L(document, "proxies"));
+        bool nodesOnly = UsesSubscriptionBaseline() && !SubscriptionBaseline.IsPrimary(session.Settings, name);
+        if (nodesOnly) document = SubscriptionHosts.NodeDocument(document, L(document, "proxies"), name);
         using (var fetch = new Fetcher(Path.GetDirectoryName(path)!, O("cache_dir", Path.Combine(session.Workspace, ".cache")), offline: true))
             document = await SubscriptionBaseline.SnapshotAsync(document, fetch, Path.GetDirectoryName(path), name);
         if (UsesSubscriptionBaseline() && SubscriptionBaseline.IsPrimary(session.Settings, name)) SubscriptionBaseline.RequireRules(document, name);
         var effective = ConfigurationValidation.ExpandSettings(session.Settings);
         if (UsesSubscriptionBaseline()) SubscriptionBaseline.Eligible(L(document, "proxies"), Map(L(effective, "sources")[index], "订阅"), M(effective, "selection"));
         else Nodes.Eligible(Nodes.Namespace(L(document, "proxies"), name), Map(L(effective, "sources")[index], "订阅"), M(effective, "selection"));
-        if (!await ConfirmAsync("导入订阅并保存项目", "将所选文件关联到“" + name + "”，保留其中的规则和策略组，并保存当前项目修改。已有缓存将被替换。", "导入并保存")) return;
+        string retained = nodesOnly ? "保留节点及其 hosts 解析依赖" : "保留规则、策略组及 hosts 解析依赖";
+        if (!await ConfirmAsync("导入订阅并保存项目", "将所选文件关联到“" + name + "”，" + retained + "，并保存当前项目修改。已有缓存将被替换。", "导入并保存")) return;
         string pending = session.Subscriptions.Text;
         try { session.Subscriptions.MarkUpdated(source, "import"); session.Save([(session.SnapshotPath(name), SubscriptionUpdater.Payload(document))]); }
         catch { session.Subscriptions.RestorePending(pending); throw; }
@@ -144,7 +146,7 @@ public sealed partial class MainWindow
     {
         var values = session!.Residences; var content = new StackPanel { Spacing = 10 };
         var add = Button("＋ 添加住宅", () => { string name = session!.NextResidenceName(); MutateResidence(list => { list.Push(O("name", name, "type", "socks5", "server", "", "port", 12345, "username", "", "password", "", "udp", true)); expandedResidence = list.Count - 1; }); RenderPage(); }); add.Name = "AddResidence";
-        content.Children.Add(Row(add)); content.Children.Add(Label(UsesSubscriptionBaseline() ? "每个住宅生成“[链式] 节点名”和“[直连] 节点名”两条路径。链式路径经机场入口连接住宅，可在客户端选择聚合组或某个订阅。只在主订阅的第一个手选组加入住宅出口，默认使用第一个链式住宅。" : "填写服务商提供的住宅代理信息。上方节点作为首次默认出口；实际使用以设备面板选择为准。", true, 13));
+        content.Children.Add(Row(add)); content.Children.Add(Label(UsesSubscriptionBaseline() ? "每个住宅生成“[链式] 节点名”和“[直连] 节点名”两条路径，链式路径经机场入口连接住宅。在客户端的“代理出口”统一选择住宅出口或机场入口；有住宅时默认使用第一个链式住宅。此处的“[直连]”表示直接连接住宅代理，业务仍从住宅 IP 出站。" : "填写服务商提供的住宅代理信息。上方节点作为首次默认出口；实际使用以设备面板选择为准。", true, 13));
         for (int i = 0; i < values.Count; i++)
         {
             int index = i; var node = Map(values[i], "住宅"); void Change(string key, JsonNode? value) => MutateResidence(list => Map(list[index], "住宅")[key] = value?.DeepClone());
@@ -213,7 +215,40 @@ public sealed partial class MainWindow
         var useSubscription = Check("使用第一个启用订阅的规则（推荐）", baseline, value => { Mutate("policy.yaml", doc => doc["rule_source"] = value ? "subscription" : "custom"); RenderPage(); }); useSubscription.Name = "UseSubscriptionBaseline";
         var ordered = (JsonObject)session!.Settings.DeepClone(); ProjectOrdering.NumberSources(ordered);
         string source = SubscriptionBaseline.Primary(ordered) is { } primary ? S(primary, "name") : "尚未启用订阅";
-        return Stack(Card("规则来源", useSubscription, Label(baseline ? $"当前来源：{source}。直接使用该订阅的规则和策略组，无需再导入规则集；其他订阅只提供节点。个人附加规则排在订阅规则前。" : "当前使用旧的自定义编排。勾选上方即可切换到订阅基线；保留现有配置内容，保存并重新生成后生效。", true, 13)), policyTab == "sets" ? RuleSetsForm() : RuleForms());
+        return Stack(Card("规则来源", useSubscription, Label(baseline ? $"当前来源：{source}。使用该订阅的匹配条件和顺序，动作归并为三类；其他订阅只提供节点。自定义规则优先于订阅规则，无需再次导入规则集。" : "当前使用旧的自定义编排。勾选上方即可切换到订阅基线；保留现有配置内容，保存并重新生成后生效。", true, 13)), policyTab == "sets" ? RuleSetsForm() : RuleForms());
+    }
+    Control UnifiedRoutingOverview()
+    {
+        var help = Label("优先顺序：自定义规则 → 主订阅规则。订阅内部保持原顺序，只归并动作。代理业务统一使用“代理出口”，有住宅时默认住宅，否则使用机场入口。", true, 12); help.Name = "UnifiedRoutingHelp";
+        var card = Card("三类分流", help,
+            Label("本地直连 · 使用本机网络，吸收订阅的直连规划。", true, 12),
+            Label("代理 · 统一从“代理出口”出站，在客户端面板切换住宅或机场。", true, 12),
+            Label("拦截 · 合并拒绝、广告拦截等规则，不再分别设置开关。", true, 12),
+            Label("未命中时沿用主订阅兜底规则的动作，不再单独创建“漏网之鱼”分组。", true, 12));
+        var details = Stack(Label("手选组沿 default-selected 或首个候选递归归类，不按分组名称猜测。以下是订阅文件的默认规划，不读取路由器保存的选择。", true, 12));
+        try
+        {
+            var ordered = (JsonObject)session!.Settings.DeepClone(); ProjectOrdering.NumberSources(ordered);
+            var source = SubscriptionBaseline.Primary(ordered);
+            string path = source is null ? "" : session.SnapshotPath(S(source, "name"));
+            if (!File.Exists(path)) details.Children.Add(Label("拉取主订阅后可查看归并结果。", true, 12));
+            else
+            {
+                var document = Nodes.Document(File.ReadAllBytes(path));
+                var routing = new SubscriptionRouting(document);
+                routing.Rewrite(L(document, "rules"), SubscriptionRouting.ProxyGroup); routing.RewriteSubRules(SubscriptionRouting.ProxyGroup);
+                var mapping = routing.Mapping(SubscriptionRouting.ProxyGroup);
+                foreach (var item in mapping.OfType<JsonObject>())
+                {
+                    string action = S(item, "action") switch { "DIRECT" => "本地直连", "REJECT" or "REJECT-DROP" => "拦截", "PASS" or "PASS-RULE" => "继续匹配", _ => "代理（统一出口）" };
+                    details.Children.Add(Label(S(item, "source") + " → " + action, true, 12));
+                }
+                if (mapping.Count == 0) details.Children.Add(Label("订阅直接使用节点或内置动作，按同样的三类方式归并。", true, 12));
+            }
+        }
+        catch (Exception ex) when (ex is BuildException or IOException or UnauthorizedAccessException)
+        { details.Children.Add(Label("暂不能预览归并，请检查主订阅：" + SafeMessage(ex), true, 12)); }
+        return Stack(card, new Expander { Name = "SubscriptionRoutingPreview", Header = "查看订阅策略归并", HorizontalAlignment = HorizontalAlignment.Stretch, Content = details });
     }
     async Task SaveRuleDefaultsAsync()
     {
@@ -240,13 +275,14 @@ public sealed partial class MainWindow
         bool baseline = SubscriptionBaseline.Enabled(policy);
         if (baseline)
         {
+            content.Children.Add(UnifiedRoutingOverview());
             var extras = Check("启用个人附加规则", B(policy, "extra_rules_enabled", true), value => { Mutate("policy.yaml", doc => doc["extra_rules_enabled"] = value); RenderPage(); }); extras.Name = "EnableExtraRules";
             content.Children.Add(extras);
             if (!B(policy, "extra_rules_enabled", true)) content.Children.Add(Note("附加规则已停用，内容仍保留。当前完全使用主订阅规则；可随时重新启用。"));
         }
-        string GroupName(string group) => group switch { "direct" => "直连", "reject" => "拒绝", _ => "代理" };
+        string GroupName(string group) => group switch { "direct" => baseline ? "本地直连" : "直连", "reject" => "拦截", _ => "代理" };
         var orderHint = Label("先匹配全部手工名单，再匹配全部 URL 名单；各阶段内按组从上到下。", true, 12);
-        ToolTip.SetTip(orderHint, baseline ? "个人附加规则 → 主订阅原始规则；不合并其他订阅规则，不添加国内库或默认动作。" : "高级前置规则 → 全部手工名单 → 全部远程名单 → 导入规则集 → 国内分流 → 默认动作；先命中先执行。"); content.Children.Add(orderHint);
+        ToolTip.SetTip(orderHint, baseline ? "个人附加规则 → 归并后的主订阅规则。自定义名单相互冲突时，按现有顺序先命中先执行；同一域名尽量只放在一类中。" : "高级前置规则 → 全部手工名单 → 全部远程名单 → 导入规则集 → 国内分流 → 默认动作；先命中先执行。"); content.Children.Add(orderHint);
         var imported = ImportedRuleSets.Sets(policy);
         if (!baseline || imported.Count > 0)
         {
@@ -270,7 +306,7 @@ public sealed partial class MainWindow
         }
         policyFocusField = "";
         content.Children.Add(groups); int advanced = remotes.Count(x => !ProjectOrdering.IsUrlEntry(x)); if (advanced > 0) content.Children.Add(Label($"另有 {advanced} 条高级来源，保留在高级 YAML 中维护。", true, 12));
-        if (baseline) { groups.IsEnabled = B(policy, "extra_rules_enabled", true); content.Children.Add(Note("最终动作、国内外分流和规则依赖均沿用主订阅。本页只设置优先于订阅的附加规则。")); return content; }
+        if (baseline) { groups.IsEnabled = B(policy, "extra_rules_enabled", true); content.Children.Add(Note("以上自定义规则优先于订阅规则；所有代理动作共用“代理出口”。订阅的规则依赖和兜底动作保留，DNS 策略单独设置。")); return content; }
         string currentAction = S(policy, "final", "PROXY");
         var options = new[] { ("PROXY", "默认代理 · 使用面板选择的代理路径"), ("DIRECT", "直连 · 不经过代理"), ("REJECT", "拒绝 · 阻止连接"), ("AIRPORT", "机场入口 · 仅经过机场"), ("住宅出口", "住宅出口 · 经机场连接住宅") }.Select(x => new ComboBoxItem { Tag = x.Item1, Content = x.Item2 }).ToList();
         if (!options.Any(x => Equals(x.Tag, currentAction))) options.Add(new() { Tag = currentAction, Content = "已有自定义动作 · " + currentAction });

@@ -36,7 +36,7 @@ public sealed partial class MainWindow
             var import = AsyncButton("导入规则集", () => ImportRuleSetAsync()); import.Name = "ImportRuleSet";
             content.Children.Add(Row(import));
         }
-        content.Children.Add(Note(baseline ? "这里只管理旧项目保留的附加规则集，主订阅的规则会直接使用，无需重新导入。匹配顺序：个人前置规则 → 手工与 URL 名单 → 下列附加规则集 → 主订阅的原始规则。规则集使用导入快照，不会自动下载或更新。" : "匹配顺序：自定义前置规则 → 手工与 URL 名单 → 下列启用的规则集 → 国内库 → 最终动作。规则集内部保留原始顺序；生成使用已导入的快照，不会自动下载或更新。"));
+        content.Children.Add(Note(baseline ? "这里只管理旧项目保留的附加规则集，主订阅规则无需重新导入。匹配顺序：个人前置规则 → 手工与 URL 名单 → 下列附加规则集 → 主订阅规则。所有代理目标生成时均归并到统一的“代理出口”。规则集使用导入快照，不会自动下载或更新。" : "匹配顺序：自定义前置规则 → 手工与 URL 名单 → 下列启用的规则集 → 国内库 → 最终动作。规则集内部保留原始顺序；生成使用已导入的快照，不会自动下载或更新。"));
         if (UsesSubscriptionBaseline() && !B(session.Policy, "extra_rules_enabled", true)) content.Children.Add(Note("个人附加规则总开关已关闭，以下规则集都不参与本次生成；内容与各自的开关状态仍保留。"));
         if (sets.Count == 0) content.Children.Add(Card("尚未导入规则集", Label("可直接选择项目订阅，或从完整配置、独立规则文件、URL、粘贴内容提取规则。节点和 DNS 不会导入。")));
         for (int i = 0; i < sets.Count; i++)

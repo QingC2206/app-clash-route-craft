@@ -126,6 +126,8 @@ try
     ((CheckBox)NamedControl("UseSubscriptionBaseline")).IsChecked = true; Pump();
     Check(SubscriptionBaseline.Enabled(window.Session.Policy) && Canonical(window.Session.Policy["dns"]) == preservedDns && preservedDocs.All(x => window.Session.Documents[x.Key].Text == x.Value), "Baseline switch changed subscription/residence/DNS");
     Check(!window.GetVisualDescendants().OfType<Control>().Any(x => x.Name is "PolicyRuleSetsTab" or "BrowseRuleSets"), "Empty subscription baseline retained redundant rule-set import navigation");
+    Check(((TextBlock)NamedControl("UnifiedRoutingHelp")).Text!.Contains("自定义规则 → 主订阅规则") && ((TextBlock)NamedControl("UnifiedRoutingHelp")).Text!.Contains("代理出口"), "Unified routing priority or exit unexplained");
+    Check(NamedControl("SubscriptionRoutingPreview") is Expander { IsExpanded: false }, "Subscription normalization preview must be available but collapsed");
     ((CheckBox)NamedControl("EnableExtraRules")).IsChecked = false; Pump();
     Check(!B(window.Session.Policy, "extra_rules_enabled") && L(window.Session.Policy, "direct").Count == L(Map(YamlData.Parse(beforeBaseline), "before"), "direct").Count, "Disabling extras deleted rules");
     AvaloniaHeadlessPlatform.ForceRenderTimerTick(2); using (var frame = window.CaptureRenderedFrame()) frame!.Save(Path.Combine(output, "subscription-baseline.png"));

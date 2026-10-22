@@ -165,6 +165,7 @@ public sealed class WorkspaceSession
         var saved = ReadReport(); string main = Path.Combine(OutputPath, "HomeChain.yaml");
         if (saved is null || !File.Exists(main)) return OutputFreshness.Missing;
         if (I(saved, "dns_artifacts_version", 0) != DnsPrivacy.ArtifactVersion) return OutputFreshness.InputsChanged;
+        if (I(saved, "hosts_compiler_version", 0) != SubscriptionHosts.Version) return OutputFreshness.InputsChanged;
         if (I(saved, "project_ordering_version", 0) != ProjectOrdering.Version || I(saved, "geo_rules_version", 0) != GeoRules.Version || I(saved, "rule_compiler_version", 0) != Rules.Version) return OutputFreshness.InputsChanged;
         if (SubscriptionBaseline.Enabled(Policy) && I(saved, "subscription_baseline_version", 0) != SubscriptionBaseline.Version) return OutputFreshness.InputsChanged;
         string mainHash = S(saved, "main_sha256"), dnsHash = S(M(saved, "dns"), "mc2_sha256");

@@ -104,12 +104,20 @@ internal static class NativeSmoke
         session.SetResidences(A(new System.Text.Json.Nodes.JsonNode?[] { O("name", "Home", "type", "socks5", "server", "127.0.0.1", "port", 9000, "udp", false) })); session.Save();
         var nodes = A(new System.Text.Json.Nodes.JsonNode?[] { O("name", "日本", "type", "http", "server", "127.0.0.1", "port", 8080), O("name", "新加坡", "type", "http", "server", "127.0.0.1", "port", 8081) });
         var original = O("proxies", nodes, "proxy-groups", A(new System.Text.Json.Nodes.JsonNode?[] { O("name", "Original", "type", "select", "proxies", A("日本", "新加坡")) }), "rules", A("MATCH,Original"));
+        Map(L(original, "proxies")[0], "node")["server"] = "primary.native.example";
+        original["hosts"] = O("primary.native.example", "edge.native.example", "edge.native.example", "127.0.0.1");
+        var secondary = O("proxies", nodes, "hosts", O("+.secondary.example", "127.0.0.2", "unused.example", "127.0.0.3"));
+        Map(L(secondary, "proxies")[0], "node")["server"] = "node.secondary.example";
         File.WriteAllBytes(session.SnapshotPath("First"), YamlData.Bytes(original));
-        File.WriteAllBytes(session.SnapshotPath("Second"), YamlData.Bytes(O("proxies", nodes.DeepClone())));
+        File.WriteAllBytes(session.SnapshotPath("Second"), SubscriptionUpdater.Payload(SubscriptionHosts.NodeDocument(secondary, L(secondary, "proxies"), "Second")));
         var built = new BuildEngine().BuildProjectAsync(workspace, "EntranceSmoke", new(Offline: true)).GetAwaiter().GetResult();
         var configuration = Map(YamlData.Read(built.OutputPath), "native baseline output");
+        if (Canonical(M(configuration, "hosts")) != Canonical(O("primary.native.example", "edge.native.example", "edge.native.example", "127.0.0.1", "node.secondary.example", "127.0.0.2")))
+            throw new BuildException("主订阅或其他订阅的 hosts 解析依赖原生自检失败");
         var groups = L(configuration, "proxy-groups").OfType<System.Text.Json.Nodes.JsonObject>().ToDictionary(x => S(x, "name"));
         if (Canonical(groups["机场入口"]["proxies"]) != Canonical(A("聚合组", "First", "Second")) || L(groups["聚合组"], "proxies").Count != 4
+            || groups.ContainsKey("Original") || Canonical(groups["代理出口"]["proxies"]) != Canonical(A("住宅出口", "机场入口"))
+            || Canonical(configuration["rules"]) != Canonical(A("MATCH,代理出口"))
             || Canonical(groups["住宅出口"]["proxies"]) != Canonical(A("[链式] Home", "[直连] Home"))
             || !L(configuration, "proxies").Any(x => S(Map(x, "node"), "name") == "[链式] Home" && S(Map(x, "node"), "dialer-proxy") == "机场入口" && !B(Map(x, "node"), "udp"))
             || configuration.ContainsKey("dns")) throw new BuildException("机场入口分组或住宅路径原生自检失败");

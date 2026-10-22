@@ -3,10 +3,10 @@ using static ClashRouteCraft.Core.Data;
 
 namespace ClashRouteCraft.Core;
 
-/// <summary>A subscription owns its routing semantics. The builder only adds explicit user extensions.</summary>
+/// <summary>The first subscription supplies matches; actions use the unified routing model.</summary>
 public static class SubscriptionBaseline
 {
-    public const int Version = 4;
+    public const int Version = 6;
     public const string JumpInclude = "(?i)(香港|港|HK|Hong Kong|HongKong|🇭🇰|日本|东京|大阪|JP|Japan|Tokyo|Osaka|🇯🇵|台湾|台灣|台|台北|TW|Taiwan|Taipei|🇹🇼|新加坡|狮城|獅城|SG|Singapore|🇸🇬)";
     public const string JumpExclude = "(?i)官网|流量|过期|到期|重置|优选|群|TG|Static|静态|直连";
     public static string ChainedName(string name) => "[链式] " + name;
@@ -48,13 +48,16 @@ public static class SubscriptionBaseline
     public static async Task<JsonObject> SnapshotAsync(JsonObject input, Fetcher fetch, string? baseDirectory, string label)
     {
         var doc = (JsonObject)input.DeepClone();
+        var hosts = SubscriptionHosts.Normalize(M(doc, "hosts"), label);
         var nodes = (JsonArray)L(doc, "proxies").DeepClone();
         var providerNodes = new Dictionary<string, List<string>>();
         var names = nodes.Select(x => Name(Map(x, "节点")["name"], "节点")).ToHashSet();
         if (names.Count != nodes.Count) throw new BuildException($"{label} 存在重名节点，无法保留订阅策略引用");
         foreach (var (key, value) in M(doc, "proxy-providers"))
         {
-            var loaded = await Nodes.CollectAsync(O("proxy-providers", O(key, value)), fetch, baseDirectory, label);
+            var collected = await Nodes.CollectDocumentAsync(O("proxy-providers", O(key, value)), fetch, baseDirectory, label);
+            hosts = SubscriptionHosts.Merge(hosts, M(collected, "hosts"), label + "/" + key);
+            var loaded = L(collected, "proxies");
             var members = new List<string>();
             foreach (var raw in loaded)
             {
@@ -65,6 +68,8 @@ public static class SubscriptionBaseline
             providerNodes.Add(key, members);
         }
         doc["proxies"] = nodes; doc.Remove("proxy-providers");
+        if (hosts.Count > 0) doc["hosts"] = hosts;
+        SubscriptionHosts.Required(hosts, nodes, label);
         foreach (var raw in L(doc, "proxy-groups"))
         {
             var group = Map(raw, "订阅策略组"); var members = L(group, "proxies").Select(x => S(x)).ToList();
@@ -114,7 +119,7 @@ public static class SubscriptionBaseline
     {
         var include = Pattern(S(source, "include", S(selection, "include", JumpInclude)), "机场入口筛选");
         var exclude = S(source, "exclude", S(selection, "exclude", JumpExclude)) is { Length: > 0 } pattern ? Pattern(pattern, "机场入口筛选") : null;
-        return nodes.OfType<JsonObject>().Select(x => S(x, "name")).Where(x =>
+        return nodes.OfType<JsonObject>().Where(SubscriptionRouting.IsProxyNode).Select(x => S(x, "name")).Where(x =>
         {
             string candidate = prefix.Length > 0 && x.StartsWith(prefix, StringComparison.Ordinal) ? x[prefix.Length..] : x;
             return Match(include, candidate) && (exclude is null || !Match(exclude, candidate));

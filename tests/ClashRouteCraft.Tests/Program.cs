@@ -970,6 +970,8 @@ await ImportedRuleSetsRegression.Run(Test);
 await SubscriptionRuleImportRegression.Run(Test);
 await BuiltInResourcesRegression.Run(Test);
 await SubscriptionBaselineRegression.Run(Test);
+await UnifiedRoutingRegression.Run(Test);
+await SubscriptionHostsRegression.Run(Test);
 await DnsPrivacyRegression.Run(Test);
 await RuleSemanticsRegression.Run(Test);
 Console.WriteLine($"RESULT {passed} passed, {failed} failed"); Environment.ExitCode = failed == 0 ? 0 : 1;

@@ -23,6 +23,7 @@ public static class ProfileCompiler
         foreach (var raw in residences) Map(raw, "住宅节点")["dialer-proxy"] = "机场入口";
         var selection = M(settings, "selection"); var sources = L(settings, "sources");
         var proxies = new JsonArray(); var sourceGroups = new JsonArray(); var summaries = new JsonArray(); var allEligible = new List<string>();
+        var hosts = new JsonObject();
         var tiers = new SortedDictionary<int, List<string>>(); var seenSources = new HashSet<string>();
         int interval = I(selection, "interval", 300), timeout = I(selection, "timeout", 5000), tolerance = I(selection, "tolerance", 50);
         if (interval < 1 || timeout < 1 || tolerance < 0) throw new BuildException("健康检查 interval/timeout 应为正数，tolerance 不能为负数");
@@ -36,7 +37,9 @@ public static class ProfileCompiler
             try
             {
                 var read = await fetch.ReadAsync(source, bytes => Nodes.Document(bytes), name);
-                nodes = Nodes.Namespace(await Nodes.CollectAsync(Map(read.Value, "订阅"), fetch, read.Base, name), name);
+                var collected = await Nodes.CollectDocumentAsync(Map(read.Value, "订阅"), fetch, read.Base, name);
+                nodes = Nodes.Namespace(L(collected, "proxies"), name);
+                hosts = SubscriptionHosts.Merge(hosts, M(collected, "hosts"), name);
             }
             catch (BuildException ex) when (S(source, "on_error", "abort") == "skip")
             { summaries.Push(O("source", name, "status", "skipped", "reason", ex.Message)); continue; }
@@ -107,6 +110,8 @@ public static class ProfileCompiler
         var configuration = Merge(O("mixed-port", 7890, "allow-lan", false, "mode", "rule", "log-level", "info", "ipv6", false, "geodata-mode", true, "geodata-loader", "memconservative", "profile", O("store-selected", true)), runtime);
         foreach (var residence in residences) proxies.Push(residence?.DeepClone());
         configuration["proxies"] = proxies; configuration["proxy-groups"] = groups; configuration["rules"] = rules;
+        SubscriptionHosts.Apply(configuration, hosts, "订阅");
+        SubscriptionHosts.Required(M(configuration, "hosts"), proxies, "合并订阅");
         string dnsExit = DnsPrivacy.Apply(configuration, policy, "住宅出口", "机场入口");
         if (dnsExit.Length == 0 && policy["dns"] is not null) configuration["dns"] = Map(policy["dns"], "policy.dns").DeepClone();
         var dnsRouting = dnsExit.Length > 0 ? null : DnsRouting.Apply(configuration, policy, candidates);
@@ -114,7 +119,7 @@ public static class ProfileCompiler
         var embeddedAsn = geoMode == "mc2-inline" ? await EmbedAsnAsync(configuration, M(policy, "asn_sources"), fetch, Path.GetDirectoryName(policyPath)!) : new JsonArray();
         Nodes.CheckGraph(configuration); var references = ValidateDns(configuration);
         var report = O("built_at", DateTimeOffset.UtcNow.ToString("O"), "sources", summaries, "remote_rules", remoteSummaries, "fetches", fetch.Events,
-            "rule_merge", mergeReport, "rule_compiler_version", Rules.Version, "embedded_geosite", embeddedGeosite, "embedded_asn", embeddedAsn,
+            "rule_merge", mergeReport, "rule_compiler_version", Rules.Version, "hosts_compiler_version", SubscriptionHosts.Version, "embedded_geosite", embeddedGeosite, "embedded_asn", embeddedAsn,
             "geo_mode", geoMode, "geo_rules_version", GeoRules.Version, "required_geodata", GeoRules.RequiredDatabases(configuration),
             "embedded_rule_count", embeddedGeosite.Concat(embeddedAsn).Sum(x => I(Map(x, "embedded"), "entries", 0)),
             "proxy_count", proxies.Count, "rule_count", rules.Count, "priority_order", A(tiers.Keys.Select(x => (JsonNode?)JsonValue.Create(x))),

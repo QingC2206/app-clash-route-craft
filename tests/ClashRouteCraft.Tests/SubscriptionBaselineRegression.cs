@@ -41,12 +41,11 @@ static class SubscriptionBaselineRegression
             var other = Subscription(f, "B"); other["rules"] = A("DOMAIN,same.example,REJECT", "MATCH,DIRECT");
             other["rule-providers"] = O("unusable-ignored", O("type", "file", "path", "missing.mrs", "format", "mrs")); f.Write("subscrip/B.yaml", other);
             var built = await Build(f); var output = Map(YamlData.Read(built.OutputPath), "output");
-            Check(Canonical(output["rules"]) == Canonical(primary["rules"]), "Primary rules rewritten, merged or deduplicated");
+            Check(Canonical(output["rules"]) == Canonical(A(@"DOMAIN-REGEX,^api[0-9]{1,3}\.example$,REJECT", "DOMAIN,same.example,PASS", "DOMAIN,same.example,代理出口", "DOMAIN,same.example,DIRECT", "MATCH,代理出口")), "Matches, regex or continuation order changed");
             Check(output["dns"] is null && output["rule-providers"] is null && GeoRules.RequiredDatabases(output).Length == 0, "Generated extra DNS or geodata dependency");
-            Check(L(output, "proxies").Count == 6 && L(output, "proxy-groups").OfType<JsonObject>().Count(x => S(x, "name") == "Original") == 1, "Secondary nodes or residential paths lost");
-            var original = L(output, "proxy-groups").OfType<JsonObject>().Single(x => S(x, "name") == "Original");
-            Check(L(original, "proxies").Select(x => S(x)).SequenceEqual(["住宅出口", "Auto", "香港同名", "美国", "DIRECT"]), "Main selector did not prepend residence and preserve original members");
-            Check(Canonical(L(output, "proxy-groups")[1]) == Canonical(L(primary, "proxy-groups")[1]), "Non-main group modified");
+            Check(L(output, "proxies").Count == 6 && !L(output, "proxy-groups").OfType<JsonObject>().Any(x => S(x, "name") is "Original" or "Auto"), "Subscription business groups survived normalization or nodes lost");
+            var unified = L(output, "proxy-groups").OfType<JsonObject>().Single(x => S(x, "name") == "代理出口");
+            Check(Canonical(unified["proxies"]) == Canonical(A("住宅出口", "机场入口")), "Unified exit does not default to residence or permits direct bypass");
             var entrance = L(output, "proxy-groups").OfType<JsonObject>().Single(x => S(x, "name") == "机场入口");
             Check(S(entrance, "type") == "select" && Canonical(entrance["proxies"]) == Canonical(A("聚合组", "A", "B")), "Entrance must select aggregate or actual subscription groups");
             var aggregate = L(output, "proxy-groups").OfType<JsonObject>().Single(x => S(x, "name") == "聚合组");
@@ -56,7 +55,7 @@ static class SubscriptionBaselineRegression
                 var sourceGroup = L(output, "proxy-groups").OfType<JsonObject>().Single(x => S(x, "name") == name);
                 Check(S(sourceGroup, "type") == "select" && Canonical(sourceGroup["proxies"]) == Canonical(A(name == "A" ? "香港同名" : "[B] 香港同名")), "Subscription group mixed nodes from another source");
             }
-            Check(L(output, "proxy-groups").Count == 7 && !L(output, "proxy-groups").OfType<JsonObject>().Any(x => S(x, "type") == "fallback" || S(x, "name").StartsWith("优先级")), "Unexpected priority/fallback groups");
+            Check(L(output, "proxy-groups").Count == 6 && !L(output, "proxy-groups").OfType<JsonObject>().Any(x => S(x, "type") == "fallback" || S(x, "name").StartsWith("优先级")), "Unexpected priority/fallback groups");
             Nodes.CheckGraph(output); Check(new WorkspaceSession(f.Root, "SampleOne").OutputIsCurrent(), "Baseline result not current");
         });
         await test("Priority reorder and disabled sources choose exactly one baseline", async () =>
@@ -80,7 +79,7 @@ static class SubscriptionBaselineRegression
             Enable(f, true); var primary = Subscription(f); f.Write("subscrip/A.yaml", primary);
             var built = await Build(f); var output = Map(YamlData.Read(built.OutputPath), "output");
             Check(S(L(output, "rules")[0]) == "DOMAIN-SUFFIX,example.cn,DIRECT", "Extras not first");
-            Check(Canonical(A(L(output, "rules").Skip(3).Select(x => x?.DeepClone()))) == Canonical(primary["rules"]), "Baseline changed after extras");
+            Check(L(output, "rules").Count == 8 && S(L(output, "rules")[3]) == @"DOMAIN-REGEX,^api[0-9]{1,3}\.example$,REJECT" && S(L(output, "rules")[7]) == "MATCH,代理出口", "Subscription rules not appended after extras");
             Check(!File.Exists(stale) && !B(M(built.Report, "dns"), "configured"), "Stale DNS retained");
         });
         await test("Original rule providers and sub-rules survive baseline build", async () =>
@@ -90,7 +89,9 @@ static class SubscriptionBaselineRegression
             primary["sub-rules"] = O("nested", A("DOMAIN,nested.example,DIRECT", "MATCH,Original"));
             primary["rules"] = A("RULE-SET,list,Original", "SUB-RULE,(NETWORK,TCP),nested", "GEOIP,CN,DIRECT", "MATCH,Original");
             f.Write("subscrip/A.yaml", primary); var built = await Build(f); var output = Map(YamlData.Read(built.OutputPath), "output");
-            foreach (string key in new[] { "rules", "rule-providers", "sub-rules" }) Check(Canonical(primary[key]) == Canonical(output[key]), key + " changed");
+            Check(Canonical(primary["rule-providers"]) == Canonical(output["rule-providers"]), "Provider payload changed");
+            Check(Canonical(output["rules"]) == Canonical(A("RULE-SET,list,代理出口", "SUB-RULE,(NETWORK,TCP),nested", "GEOIP,CN,DIRECT", "MATCH,代理出口")), "RULE-SET or SUB-RULE reference broken");
+            Check(Canonical(M(output, "sub-rules")["nested"]) == Canonical(A("DOMAIN,nested.example,DIRECT", "MATCH,代理出口")), "Sub-rule actions not normalized");
             Check(GeoRules.RequiredDatabases(output).SequenceEqual(["country.mmdb"]), "Introduced new database requirements");
         });
         await test("Pull stores complete primary while secondary rules are never evaluated", async () =>
@@ -151,10 +152,12 @@ static class SubscriptionBaselineRegression
             Check(Canonical(L(Map(L(snapshot, "proxy-groups")[0], "group"), "proxies")) == Canonical(A("DIRECT", "香港同名")), "Group filter or order changed");
             Nodes.CheckGraph(snapshot);
         });
-        await test("Residential is optional and original selector defaults remain", async () =>
+        await test("Residential is optional and unified proxy defaults to airport", async () =>
         {
             using var f = new Fixture(); Enable(f); f.Write("residential.yaml", O("proxies", A())); f.Write("subscrip/A.yaml", Subscription(f));
             var built = await Build(f); Check(I(built.Report, "proxy_count", 0) == 4, "Optional residence required");
+            var groups = L(Map(YamlData.Read(built.OutputPath), "output"), "proxy-groups").OfType<JsonObject>();
+            Check(Canonical(groups.Single(x => S(x, "name") == "代理出口")["proxies"]) == Canonical(A("机场入口")), "No residence must use airport, never direct");
         });
         await test("Residential direct and chained copies preserve explicit UDP and TLS settings", async () =>
         {
@@ -176,8 +179,9 @@ static class SubscriptionBaselineRegression
             var settings = Map(YamlData.Read(f.Settings), "settings"); settings["selection"] = O("include", "^no-match$"); f.Write("settings.yaml", settings);
             try { await Build(f); throw new Exception("Empty jump became DIRECT"); }
             catch (BuildException ex) { Check(ex.Message.Contains("机场入口"), "Missing entrance not explained"); }
-            f.Write("residential.yaml", O("proxies", A())); var output = Map(YamlData.Read((await Build(f)).OutputPath), "output");
-            Check(L(output, "proxy-groups").Count == 2 && L(output, "proxies").Count == 4, "No residence still required jump candidates or lost subscription nodes");
+            f.Write("residential.yaml", O("proxies", A()));
+            try { await Build(f); throw new Exception("Empty unified exit accepted without residence"); }
+            catch (BuildException ex) { Check(ex.Message.Contains("机场入口"), "Missing entrance not explained"); }
         });
         await test("Residential injection never creates a dialer cycle", async () =>
         {
@@ -186,7 +190,7 @@ static class SubscriptionBaselineRegression
             L(primary, "proxy-groups").Push(O("name", "Upstream", "type", "select", "proxies", A("美国"))); f.Write("subscrip/A.yaml", primary);
             var output = Map(YamlData.Read((await Build(f)).OutputPath), "output"); Nodes.CheckGraph(output);
             var upstream = L(output, "proxy-groups").OfType<JsonObject>().Single(x => S(x, "name") == "Upstream");
-            Check(Canonical(upstream["proxies"]) == Canonical(A("美国")), "Injected circular choice");
+            Check(Canonical(upstream["proxies"]) == Canonical(A("美国")) && B(upstream, "hidden"), "Transport group must be preserved and hidden without injecting a circular exit");
         });
         await test("Entrance defaults include four regions and honor explicit filters", () =>
         {
@@ -214,13 +218,13 @@ static class SubscriptionBaselineRegression
             Check(L(groups["聚合组"], "proxies").Count == 8 && L(groups["A"], "proxies").Count == 4 && L(groups["B"], "proxies").Count == 4, "Aggregate or per-source pools lost eligible nodes");
             Check(Canonical(groups["聚合组"]["proxies"]) == Canonical(A(L(groups["A"], "proxies").Concat(L(groups["B"], "proxies")).Select(x => x?.DeepClone()))), "Aggregate differs from union of source pools");
             Check(new[] { "聚合组", "A", "B" }.All(x => S(groups[x], "type") == "url-test") && !groups.ContainsKey("Disabled"), "Source groups do not use automatic testing or include disabled sources");
-            Check(L(output, "proxies").Any(x => S(Map(x, "node"), "name") == "美国") && L(groups["Auto"], "proxies").Any(x => S(x) == "美国"), "Entrance filtering removed original subscription routes");
+            Check(L(output, "proxies").Any(x => S(Map(x, "node"), "name") == "美国") && !groups.ContainsKey("Auto"), "Unselected node removed or original business group retained");
             Map(L(settings, "sources")[1], "source")["include"] = "^no-match$"; f.Write("settings.yaml", settings);
             output = Map(YamlData.Read((await Build(f)).OutputPath), "output"); groups = L(output, "proxy-groups").OfType<JsonObject>().ToDictionary(x => S(x, "name"));
             Check(Canonical(groups["机场入口"]["proxies"]) == Canonical(A("聚合组", "A")) && !groups.ContainsKey("B") && L(groups["聚合组"], "proxies").Count == 4, "Empty source produced an invalid group or unfiltered aggregate");
             Nodes.CheckGraph(output);
         });
-        await test("Renamed residential paths keep old and new explicit rule targets usable", async () =>
+        await test("Existing custom proxy targets all use the unified exit", async () =>
         {
             using var f = new Fixture(); Enable(f, true); f.Write("subscrip/A.yaml", Subscription(f));
             var policy = Map(YamlData.Read(Path.Combine(f.Project, "policy.yaml")), "policy");
@@ -228,20 +232,20 @@ static class SubscriptionBaselineRegression
             policy["first"] = A(actions.Select((action, index) => (JsonNode?)O("match", "DOMAIN,r" + index + ".example", "action", action))); f.Write("policy.yaml", policy);
             string inputBefore = File.ReadAllText(Path.Combine(f.Project, "residential.yaml"));
             var output = Map(YamlData.Read((await Build(f)).OutputPath), "output");
-            string[] expected = ["[链式] 住宅", "[直连] 住宅", "[链式] 住宅", "[直连] 住宅", "机场入口", "机场入口", "A", "聚合组"];
-            Check(L(output, "rules").Take(expected.Length).Select(x => Rules.SplitFull(S(x))[2]).SequenceEqual(expected), "Renaming broke explicit actions or changed direct/chain semantics");
+            Check(L(output, "rules").Take(actions.Length).All(x => Rules.SplitFull(S(x))[2] == "代理出口"), "Old explicit proxy action bypasses the unified exit");
             Check(File.ReadAllText(Path.Combine(f.Project, "residential.yaml")) == inputBefore, "Output labels changed residential input");
         });
         await test("Generated entrance and residential labels do not overwrite subscription names", async () =>
         {
             using var f = new Fixture(); Enable(f); var primary = Subscription(f);
-            string[] existing = ["机场入口", "聚合组", "A", "住宅出口", "[链式] 住宅", "[直连] 住宅"];
+            string[] existing = ["机场入口", "聚合组", "A", "住宅出口", "[链式] 住宅", "[直连] 住宅", "代理出口"];
             foreach (string name in existing) L(primary, "proxy-groups").Push(O("name", name, "type", "select", "proxies", A("香港同名")));
             f.Write("subscrip/A.yaml", primary); var built = await Build(f); var output = Map(YamlData.Read(built.OutputPath), "output");
             var groups = L(output, "proxy-groups").OfType<JsonObject>().ToDictionary(x => S(x, "name"));
             Check(S(built.Report, "jump_group") == "机场入口 · 2" && S(built.Report, "aggregate_group") == "聚合组 · 2", "Generated group collision unresolved");
             Check(Canonical(groups["机场入口 · 2"]["proxies"]) == Canonical(A("聚合组 · 2", "A · 2", "B")), "Entrance chose original colliding groups");
-            foreach (string name in existing) Check(Canonical(groups[name]) == Canonical(L(primary, "proxy-groups").OfType<JsonObject>().Single(x => S(x, "name") == name)), "Original named group modified");
+            foreach (string name in existing) Check(!groups.ContainsKey(name), "Unneeded subscription group survived");
+            Check(S(built.Report, "main_selector") == "代理出口 · 2" && S(L(output, "rules").Last()) == "MATCH,代理出口 · 2", "Unified exit collision changed rule references");
             Check(Canonical(groups["住宅出口 · 2"]["proxies"]) == Canonical(A("[链式] 住宅 · 2", "[直连] 住宅 · 2")), "Residential collision unresolved");
             Nodes.CheckGraph(output);
         });

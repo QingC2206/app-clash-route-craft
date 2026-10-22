@@ -79,7 +79,7 @@ public static class CoreValidation
             }
             if (!content.TryGetValue("merlinclash/yaml_basic/head.yaml", out var header)) throw new BuildException("MC2 安装包缺少 head.yaml");
             var merged = Map(YamlData.Parse(header), "MC2 head");
-            foreach (string key in new[] { "proxies", "proxy-providers", "proxy-groups", "rule-providers", "rules", "sub-rules" }) if (configuration.ContainsKey(key)) merged[key] = configuration[key]?.DeepClone();
+            foreach (string key in new[] { "proxies", "proxy-providers", "proxy-groups", "rule-providers", "rules", "sub-rules", "hosts" }) if (configuration.ContainsKey(key)) merged[key] = configuration[key]?.DeepClone();
             if (dns is not null) merged = Merge(merged, dns);
             var requiredAssets = new JsonObject();
             if (nativeDataDirectory is not null)

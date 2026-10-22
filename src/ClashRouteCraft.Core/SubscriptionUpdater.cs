@@ -12,7 +12,7 @@ public static class SubscriptionUpdater
     {
         var loaded = await fetch.ReadAsync(source, bytes => Nodes.Document(bytes), name);
         var document = routing ? await SubscriptionBaseline.SnapshotAsync(Map(loaded.Value, name), fetch, loaded.Base, name)
-            : O("proxies", await Nodes.CollectAsync(Map(loaded.Value, name), fetch, loaded.Base, name));
+            : await Nodes.CollectDocumentAsync(Map(loaded.Value, name), fetch, loaded.Base, name);
         var nodes = L(document, "proxies");
         if (nodes.Count == 0) throw new BuildException($"{name} 下载结果没有节点");
         ConfigurationValidation.CacheNodes(nodes);

@@ -103,7 +103,7 @@ public static class ParameterInspection
         var residences = residenceDoc is JsonArray a ? a : (residenceDoc as JsonObject)?["proxies"] as JsonArray ?? new();
         var sources = settings["sources"] as JsonArray ?? new();
         var actions = new HashSet<string>(Nodes.Reserved) { "默认代理", "住宅出口", "机场入口", "订阅优先", "机场手选" };
-        if (subscriptionBaseline) { actions.Add("聚合组"); actions.Add("订阅跳板"); }
+        if (subscriptionBaseline) { actions.Add("聚合组"); actions.Add("订阅跳板"); actions.Add(SubscriptionRouting.ProxyGroup); }
         yield return Evaluate("订阅配置", "sources", "AddSource", () =>
         {
             ConfigurationValidation.Settings(settings);
@@ -167,11 +167,13 @@ public static class ParameterInspection
             if (build is not null && ConfigurationValidation.Download(session, primary, build)) return ($"将拉取“{name}”的完整规则；其他订阅仅提供节点", false);
             if (!File.Exists(path)) return ($"规则来源：{name}；请先拉取完整订阅", true);
             var document = Nodes.Document(File.ReadAllBytes(path)); SubscriptionBaseline.RequireRules(document, name);
-            return ($"{name} · {SubscriptionBaseline.RuleCount(document)} 条原始规则；其他订阅仅提供节点", false);
+            var routing = new SubscriptionRouting(document);
+            routing.Rewrite(L(document, "rules"), SubscriptionRouting.ProxyGroup); routing.RewriteSubRules(SubscriptionRouting.ProxyGroup);
+            return ($"{name} · {SubscriptionBaseline.RuleCount(document)} 条规则，已检查直连/代理/拦截归并；其他订阅仅提供节点", false);
         });
         yield return Evaluate("住宅出口 · 名称", "residential", "AddResidence", () =>
         {
-            if (residences.Count == 0) { if (subscriptionBaseline) return ("未添加住宅出口，保留订阅的代理路径", false); throw new BuildException("请添加住宅出口"); }
+            if (residences.Count == 0) { if (subscriptionBaseline) return ("未添加住宅出口，统一代理出口使用机场入口", false); throw new BuildException("请添加住宅出口"); }
             var names = new HashSet<string>();
             foreach (var raw in residences)
             {

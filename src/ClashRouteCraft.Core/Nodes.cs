@@ -6,7 +6,7 @@ namespace ClashRouteCraft.Core;
 
 public static class Nodes
 {
-    public static readonly HashSet<string> Reserved = ["DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE", "GLOBAL"];
+    public static readonly HashSet<string> Reserved = ["DIRECT", "REJECT", "REJECT-DROP", "PASS", "PASS-RULE", "COMPATIBLE", "GLOBAL"];
     public const string Asia = @"(?i)(香港|港|HK|Hong Kong|HongKong|日本|东京|大阪|JP|Japan|Tokyo|Osaka|台湾|台|台北|TW|Taiwan|Taipei|新加坡|狮城|SG|Singapore)";
     public static JsonObject Document(byte[] raw) => Document(YamlData.Parse(raw));
     public static JsonObject Document(JsonNode? document)
@@ -25,15 +25,24 @@ public static class Nodes
                 if (map.ContainsKey("proxy-providers")) Map(map["proxy-providers"], "proxy-providers");
                 return (JsonObject)map.DeepClone();
             }
-            if (map["payload"] is JsonArray payload && payload.All(x => x is JsonObject)) return Document(O("proxies", payload));
+            if (map["payload"] is JsonArray payload && payload.All(x => x is JsonObject))
+            {
+                var result = Document(O("proxies", payload));
+                if (map.ContainsKey("hosts")) result["hosts"] = map["hosts"]?.DeepClone();
+                return result;
+            }
         }
         throw new BuildException("未找到节点列表；支持完整 Clash/Mihomo YAML、proxies/payload 文件或节点列表");
     }
     public static async Task<JsonArray> CollectAsync(JsonObject document, Fetcher fetch, string? baseDirectory, string label, int depth = 0, HashSet<string>? ancestry = null)
+        => L(await CollectDocumentAsync(document, fetch, baseDirectory, label, depth, ancestry), "proxies");
+
+    public static async Task<JsonObject> CollectDocumentAsync(JsonObject document, Fetcher fetch, string? baseDirectory, string label, int depth = 0, HashSet<string>? ancestry = null)
     {
         if (depth > 4) throw new BuildException($"{label} 的 providers 嵌套过深或存在循环");
         ancestry ??= [];
         var result = (JsonArray)L(document, "proxies").DeepClone();
+        var hosts = SubscriptionHosts.Normalize(M(document, "hosts"), label);
         foreach (var (_, raw) in M(document, "proxy-providers"))
         {
             var provider = Map(raw, "provider");
@@ -65,7 +74,8 @@ public static class Nodes
                 catch (BuildException) when (provider["payload"] is JsonArray { Count: > 0 } && !B(fetch.Options, "strict_subscriptions"))
                 { child = O("proxies", L(provider, "payload")); fetch.Events.Push(O("item", childLabel, "status", "inline_fallback")); }
             }
-            var children = await CollectAsync(child, fetch, childBase, childLabel, depth + 1, childAncestry);
+            var collected = await CollectDocumentAsync(child, fetch, childBase, childLabel, depth + 1, childAncestry);
+            var children = L(collected, "proxies"); var retained = new JsonArray();
             var include = Pattern(S(provider, "filter", ".*"), label);
             var exclude = S(provider, "exclude-filter") is { Length: > 0 } exclusion ? Pattern(exclusion, label) : null;
             var changes = M(provider, "override");
@@ -79,11 +89,12 @@ public static class Nodes
                 if (!Match(include, original) || exclude is not null && Match(exclude, original) || excludedTypes.Contains(S(node, "type"))) continue;
                 node["name"] = S(changes, "additional-prefix") + original + S(changes, "additional-suffix");
                 foreach (var (key, value) in changes.Where(x => x.Key is not "additional-prefix" and not "additional-suffix")) node[key] = value?.DeepClone();
-                result.Push(node);
+                result.Push(node); retained.Push(node.DeepClone());
             }
+            hosts = SubscriptionHosts.Merge(hosts, SubscriptionHosts.Required(M(collected, "hosts"), retained, childLabel), childLabel);
         }
         if (result.Count > 20000) throw new BuildException($"{label} 节点数超过 20000");
-        return result;
+        return SubscriptionHosts.NodeDocument(O("hosts", hosts), result, label);
     }
     public static JsonArray Namespace(JsonArray nodes, string source)
     {
