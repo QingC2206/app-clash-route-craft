@@ -1,0 +1,100 @@
+# Runtime data at any workspace depth, including manually copied portable apps.
+config/
+settings/
+resources/
+output/
+subscrip/
+.cache/
+.project-trash/
+.subscription-state.json
+.env
+.env.*
+*.log
+*preferences*.json
+
+# Local copies, credentials, databases, and diagnostic captures.
+*.bak
+*.backup
+*.old
+*.orig
+*~
+*.tmp
+*.swp
+*.swo
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+*.har
+*.dmp
+
+# This source asset directory is not a downloaded runtime resources directory.
+# Reopen the directory before allowing its public templates (also on Windows).
+!src/ClashRouteCraft.Core/Resources/
+
+# User YAML is private by default. Keep public data exceptions explicit.
+*.yaml
+*.yml
+!src/ClashRouteCraft.Core/Resources/Defaults/settings.yaml
+!src/ClashRouteCraft.Core/Resources/Defaults/residential.yaml
+!src/ClashRouteCraft.Core/Resources/Defaults/policy.yaml
+!src/ClashRouteCraft.Core/Resources/Defaults/dns.yaml
+!src/ClashRouteCraft.Core/Resources/Defaults/mc2-fakeip-default.yaml
+!tests/fixtures/wechat-domain.yaml
+!tools/python-reference/tests/fixtures/dns.yaml
+
+# Public GitHub configuration must not be hidden by the YAML exclusion.
+!.github/workflows/*.yml
+!.github/workflows/*.yaml
+!.github/ISSUE_TEMPLATE/*.yml
+!.github/ISSUE_TEMPLATE/*.yaml
+!.github/dependabot.yml
+!.github/dependabot.yaml
+
+# Build outputs and local dependency caches
+**/bin/
+**/obj/
+.packages/
+artifacts/
+releases/
+out/
+__pycache__/
+*.py[cod]
+.venv/
+.vs/
+.idea/
+*.user
+*.suo
+*.dll
+*.exe
+*.pdb
+*.nupkg
+*.zip
+*.7z
+*.tar.gz
+
+# macOS Finder metadata, AppleDouble sidecars, and volume caches at any depth.
+# Keep these after public-file exceptions so metadata is never re-included.
+.DS_Store
+.AppleDouble/
+.LSOverride
+._*
+__MACOSX/
+.Spotlight-V100/
+.Trashes/
+.TemporaryItems/
+.fseventsd/
+.DocumentRevisions-V100/
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent

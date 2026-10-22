@@ -1,0 +1,313 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="ClashRouteCraft.Desktop.App" RequestedThemeVariant="Default">
+  <Application.Resources>
+    <ResourceDictionary>
+      <Color x:Key="SystemAccentColor">#285CC8</Color>
+      <Color x:Key="SystemAccentColorDark1">#1F4FB6</Color>
+      <Color x:Key="SystemAccentColorDark2">#1A449C</Color>
+      <Color x:Key="SystemAccentColorDark3">#163A85</Color>
+      <Color x:Key="SystemAccentColorLight1">#3E6DD8</Color>
+      <Color x:Key="SystemAccentColorLight2">#5A85E2</Color>
+      <Color x:Key="SystemAccentColorLight3">#7C9EEB</Color>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="ControlInk">#E8EEF6</SolidColorBrush>
+          <SolidColorBrush x:Key="TextSecondary">#AEBACB</SolidColorBrush>
+          <SolidColorBrush x:Key="TextPlaceholder">#8FA0B5</SolidColorBrush>
+          <SolidColorBrush x:Key="EditorSurface">#151D27</SolidColorBrush>
+          <SolidColorBrush x:Key="ControlLine">#7D869C</SolidColorBrush>
+          <SolidColorBrush x:Key="ControlHover">#24303F</SolidColorBrush>
+          <SolidColorBrush x:Key="ControlFocus">#9CBDFF</SolidColorBrush>
+          <SolidColorBrush x:Key="PopupSurface">#202A38</SolidColorBrush>
+          <SolidColorBrush x:Key="ButtonLine">#4A5768</SolidColorBrush>
+          <SolidColorBrush x:Key="ActionPrimary">#285CC8</SolidColorBrush>
+          <SolidColorBrush x:Key="ActionPrimaryHover">#1F4FB6</SolidColorBrush>
+          <SolidColorBrush x:Key="SelectionBg">#25395C</SolidColorBrush>
+          <SolidColorBrush x:Key="DangerInk">#FF9A9A</SolidColorBrush>
+          <SolidColorBrush x:Key="DangerLine">#7A4A4E</SolidColorBrush>
+          <SolidColorBrush x:Key="DangerTint">#37242A</SolidColorBrush>
+          <SolidColorBrush x:Key="SeparatorLine">#2A3542</SolidColorBrush>
+          <SolidColorBrush x:Key="DisabledInk">#939EAD</SolidColorBrush>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="ControlInk">#1C2735</SolidColorBrush>
+          <SolidColorBrush x:Key="TextSecondary">#5B6979</SolidColorBrush>
+          <SolidColorBrush x:Key="TextPlaceholder">#6B7688</SolidColorBrush>
+          <SolidColorBrush x:Key="EditorSurface">#FFFFFF</SolidColorBrush>
+          <SolidColorBrush x:Key="ControlLine">#8B95A5</SolidColorBrush>
+          <SolidColorBrush x:Key="ControlHover">#EAEFF7</SolidColorBrush>
+          <SolidColorBrush x:Key="ControlFocus">#285CC8</SolidColorBrush>
+          <SolidColorBrush x:Key="PopupSurface">#FFFFFF</SolidColorBrush>
+          <SolidColorBrush x:Key="ButtonLine">#C6CFDB</SolidColorBrush>
+          <SolidColorBrush x:Key="ActionPrimary">#285CC8</SolidColorBrush>
+          <SolidColorBrush x:Key="ActionPrimaryHover">#1F4FB6</SolidColorBrush>
+          <SolidColorBrush x:Key="SelectionBg">#E8EFFB</SolidColorBrush>
+          <SolidColorBrush x:Key="DangerInk">#B02A37</SolidColorBrush>
+          <SolidColorBrush x:Key="DangerLine">#D9A7AC</SolidColorBrush>
+          <SolidColorBrush x:Key="DangerTint">#FBEDEE</SolidColorBrush>
+          <SolidColorBrush x:Key="SeparatorLine">#D7DFE9</SolidColorBrush>
+          <SolidColorBrush x:Key="DisabledInk">#767F8C</SolidColorBrush>
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+      <Thickness x:Key="CompactPadding">9,6</Thickness>
+      <x:Double x:Key="DisclosureFontSize">13</x:Double>
+      <Thickness x:Key="DisclosurePadding">0</Thickness>
+      <Thickness x:Key="DisclosureContentInset">30,0,0,0</Thickness>
+      <StreamGeometry x:Key="DisclosureChevronGeometry">M3,6 L8,11 L13,6</StreamGeometry>
+      <ControlTheme x:Key="DisclosureTheme" TargetType="Expander">
+        <Setter Property="Template">
+          <ControlTemplate>
+            <StackPanel Spacing="4">
+              <ToggleButton Classes="disclosure" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                  IsChecked="{TemplateBinding IsExpanded, Mode=TwoWay}">
+                <Grid ColumnDefinitions="30,*">
+                  <Path Name="DisclosureChevron" Data="{StaticResource DisclosureChevronGeometry}" Stroke="{DynamicResource TextSecondary}" StrokeThickness="1.6" Width="16" Height="16" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  <ContentPresenter Grid.Column="1" Content="{TemplateBinding Header}" VerticalAlignment="Center" />
+                </Grid>
+              </ToggleButton>
+              <ContentPresenter Name="PART_ContentPresenter" Content="{TemplateBinding Content}" Margin="{StaticResource DisclosureContentInset}" IsVisible="{TemplateBinding IsExpanded}" />
+            </StackPanel>
+          </ControlTemplate>
+        </Setter>
+      </ControlTheme>
+    </ResourceDictionary>
+  </Application.Resources>
+  <Application.Styles>
+    <FluentTheme />
+    <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml" />
+    <Style Selector="Window">
+      <Setter Property="FontFamily" Value="Segoe UI,Microsoft YaHei,Noto Sans CJK SC" />
+      <Setter Property="FontSize" Value="13" />
+    </Style>
+
+    <!-- Buttons: secondary is the default (transparent + 1px outline); primary/danger/icon/nav/tab override. -->
+    <Style Selector="Button">
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Padding" Value="12,5" />
+      <Setter Property="MinHeight" Value="32" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ButtonLine}" />
+      <Setter Property="Foreground" Value="{DynamicResource ControlInk}" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource ControlHover}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ControlLine}" />
+    </Style>
+    <Style Selector="Button:pressed /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource SelectionBg}" />
+    </Style>
+    <Style Selector="Button:disabled /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ButtonLine}" />
+    </Style>
+    <Style Selector="Button:disabled">
+      <Setter Property="Foreground" Value="{DynamicResource DisabledInk}" />
+    </Style>
+
+    <Style Selector="Button.primary">
+      <Setter Property="Background" Value="{DynamicResource ActionPrimary}" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ActionPrimary}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Button.primary:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource ActionPrimaryHover}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ActionPrimaryHover}" />
+    </Style>
+    <Style Selector="Button.primary:pressed /template/ ContentPresenter">
+      <Setter Property="Background" Value="#1A449C" />
+      <Setter Property="BorderBrush" Value="#1A449C" />
+    </Style>
+    <Style Selector="Button.primary:disabled /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource SelectionBg}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource SelectionBg}" />
+    </Style>
+    <Style Selector="Button.primary:disabled">
+      <Setter Property="Foreground" Value="{DynamicResource DisabledInk}" />
+    </Style>
+
+    <Style Selector="Button.danger">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource DangerInk}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource DangerLine}" />
+    </Style>
+    <Style Selector="Button.danger:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource DangerTint}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource DangerLine}" />
+    </Style>
+    <Style Selector="Button.danger:disabled">
+      <Setter Property="Foreground" Value="{DynamicResource DisabledInk}" />
+    </Style>
+
+    <Style Selector="Button.icon">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Padding" Value="6" />
+      <Setter Property="MinHeight" Value="30" />
+    </Style>
+    <Style Selector="Button.icon:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource ControlHover}" />
+    </Style>
+    <Style Selector="Button.icon:disabled /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.icon:disabled Path">
+      <Setter Property="Opacity" Value="0.3" />
+    </Style>
+
+    <Style Selector="Button.nav">
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Padding" Value="12,7" />
+      <Setter Property="MinHeight" Value="34" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Foreground" Value="{DynamicResource ControlInk}" />
+    </Style>
+    <Style Selector="Button.nav:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource ControlHover}" />
+    </Style>
+
+    <Style Selector="Button.tab">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="0" />
+      <Setter Property="Padding" Value="12,6" />
+      <Setter Property="MinHeight" Value="32" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+    </Style>
+    <Style Selector="Button.tab:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource ControlHover}" />
+    </Style>
+    <Style Selector="Button.tab.selected">
+      <Setter Property="Foreground" Value="{DynamicResource ControlInk}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="BorderThickness" Value="0,0,0,2" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ActionPrimary}" />
+    </Style>
+    <Style Selector="Button.tab.selected:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+
+    <!-- Inputs -->
+    <Style Selector="TextBox">
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="MinHeight" Value="34" />
+      <Setter Property="Padding" Value="{StaticResource CompactPadding}" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Background" Value="{DynamicResource EditorSurface}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ControlLine}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="ComboBox">
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="MinHeight" Value="34" />
+      <Setter Property="Padding" Value="{StaticResource CompactPadding}" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Background" Value="{DynamicResource EditorSurface}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ControlLine}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="NumericUpDown">
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="MinHeight" Value="34" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Background" Value="{DynamicResource EditorSurface}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ControlLine}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="TextBox:pointerover /template/ Border#PART_BorderElement">
+      <Setter Property="Background" Value="{DynamicResource ControlHover}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ControlLine}" />
+    </Style>
+    <Style Selector="TextBox:focus /template/ Border#PART_BorderElement">
+      <Setter Property="Background" Value="{DynamicResource EditorSurface}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ControlFocus}" />
+    </Style>
+    <Style Selector="TextBox:pointerover, TextBox:focus">
+      <Setter Property="Foreground" Value="{DynamicResource ControlInk}" />
+    </Style>
+    <Style Selector="ComboBox:pointerover /template/ Border#Background, ComboBox:pressed /template/ Border#Background">
+      <Setter Property="Background" Value="{DynamicResource ControlHover}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ControlLine}" />
+    </Style>
+    <Style Selector="ComboBox:focus-visible /template/ Border#HighlightBackground">
+      <Setter Property="Background" Value="{DynamicResource EditorSurface}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ControlFocus}" />
+    </Style>
+    <Style Selector="ComboBox:focus-visible /template/ ContentControl#ContentPresenter">
+      <Setter Property="Foreground" Value="{DynamicResource ControlInk}" />
+    </Style>
+    <Style Selector="ComboBox /template/ Border#PopupBorder">
+      <Setter Property="Background" Value="{DynamicResource PopupSurface}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ControlLine}" />
+    </Style>
+    <Style Selector="ComboBoxItem">
+      <Setter Property="MinHeight" Value="32" />
+      <Setter Property="Padding" Value="8,4" />
+      <Setter Property="FontSize" Value="13" />
+    </Style>
+
+    <Style Selector="CheckBox">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Foreground" Value="{DynamicResource ControlInk}" />
+      <Setter Property="MinHeight" Value="28" />
+    </Style>
+    <Style Selector="RadioButton">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Foreground" Value="{DynamicResource ControlInk}" />
+    </Style>
+
+    <Style Selector="FlyoutPresenter.rule-check">
+      <Setter Property="Background" Value="{DynamicResource PopupSurface}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ControlLine}" />
+      <Setter Property="Padding" Value="12" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="MaxWidth" Value="Infinity" />
+      <Setter Property="MaxHeight" Value="Infinity" />
+    </Style>
+    <Style Selector="Expander">
+      <Setter Property="Theme" Value="{StaticResource DisclosureTheme}" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="ToggleButton.disclosure">
+      <Setter Property="Foreground" Value="{DynamicResource ControlInk}" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+      <Setter Property="BorderBrush" Value="{DynamicResource SeparatorLine}" />
+      <Setter Property="Padding" Value="{StaticResource DisclosurePadding}" />
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="FontSize" Value="{StaticResource DisclosureFontSize}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="ToggleButton.disclosure:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource ControlHover}" />
+    </Style>
+    <Style Selector="ToggleButton.disclosure:checked">
+      <Setter Property="Foreground" Value="{DynamicResource ControlInk}" />
+    </Style>
+    <Style Selector="ToggleButton.disclosure:checked /template/ ContentPresenter">
+      <Setter Property="Foreground" Value="{DynamicResource ControlInk}" />
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ToggleButton.disclosure:checked:pointerover /template/ ContentPresenter">
+      <Setter Property="Foreground" Value="{DynamicResource ControlInk}" />
+      <Setter Property="Background" Value="{DynamicResource ControlHover}" />
+    </Style>
+    <Style Selector="ToggleButton.disclosure:checked Path#DisclosureChevron">
+      <Setter Property="RenderTransform">
+        <RotateTransform Angle="180" />
+      </Setter>
+    </Style>
+  </Application.Styles>
+</Application>

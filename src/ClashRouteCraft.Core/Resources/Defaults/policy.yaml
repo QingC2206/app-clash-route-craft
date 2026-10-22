@@ -1,0 +1,18 @@
+rule_source: subscription
+extra_rules_enabled: true
+dns_privacy:
+  enabled: false
+  proxy_exit: residential
+first: []
+order: [direct, reject, proxy]
+direct: []
+reject: []
+proxy: []
+remote_rules: []
+domestic_direct: false
+final: PROXY
+dns_follow_rules: false
+geo_mode: native
+geosite_sources:
+  geolocation-!cn:
+    url: https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/classical/geolocation-!cn.list

@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ClashRouteCraft.Core/ClashRouteCraft.Core.csproj" />
+    <Project Path="src/ClashRouteCraft.Desktop/ClashRouteCraft.Desktop.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ClashRouteCraft.Tests/ClashRouteCraft.Tests.csproj" />
+    <Project Path="tests/ClashRouteCraft.UiTests/ClashRouteCraft.UiTests.csproj" />
+  </Folder>
+</Solution>

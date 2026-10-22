@@ -1,0 +1,5 @@
+# 填写订阅链接，或导入已有节点文件。
+sources:
+  - name: AirportA
+    url: ''
+    enabled: true

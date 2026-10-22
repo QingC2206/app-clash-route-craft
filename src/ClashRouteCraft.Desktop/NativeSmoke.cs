@@ -1,0 +1,213 @@
+using Avalonia;
+using Avalonia.Threading;
+using ClashRouteCraft.Core;
+using static ClashRouteCraft.Core.Data;
+
+namespace ClashRouteCraft.Desktop;
+
+internal static class NativeSmoke
+{
+    public static int Run(string resultPath)
+    {
+        string workspace = Path.Combine(Path.GetTempPath(), "homechain-native-smoke-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(workspace);
+        try
+        {
+            if (BuiltInDefaults.Ensure(workspace).Count != 4 || BuiltInDefaults.Ensure(workspace).Count != 0) throw new BuildException("内置模板初始化失败");
+            File.Delete(Path.Combine(workspace, "config", "Example", "policy.yaml"));
+            if (BuiltInDefaults.Ensure(workspace).Count != 1 || CoreValidation.FindResources(workspace).Mc2Package.Length != 0) throw new BuildException("内置模板恢复或资源边界自检失败");
+            WorkspaceSession.CreateProject(workspace, "SmokeTest");
+            var session = new WorkspaceSession(workspace, "SmokeTest"); var settings = session.Settings; settings["validation"] = O(); session.Documents["settings.yaml"].Set(settings);
+            var residences = A(new System.Text.Json.Nodes.JsonNode?[] { O("name", "住宅-1", "type", "socks5", "server", "127.0.0.1", "port", 12345, "username", "demo", "password", "demo", "udp", true) }); session.SetResidences(residences);
+            var policy = DnsSettings.ApplyRecommended(session.Policy); policy["rule_source"] = "custom"; policy["domestic_direct"] = false; policy["geosite_sources"] = O();
+            policy["first"] = A(new System.Text.Json.Nodes.JsonNode?[] { O("match", "DOMAIN,native-rule.example", "action", "PASS"),
+                O("match", "IP-CIDR,127.0.0.0/8,no-resolve", "action", "REJECT"), O("match", "IP-CIDR,192.0.2.0/24", "action", "REJECT"), O("match", "IP-CIDR,127.0.0.0/8,no-resolve", "action", "REJECT") });
+            policy["reject"] = A(new System.Text.Json.Nodes.JsonNode?[] { System.Text.Json.Nodes.JsonValue.Create("DOMAIN,native-rule.example"),
+                System.Text.Json.Nodes.JsonValue.Create(@"DOMAIN-REGEX,^api[0-9]{1,3}\.example$"), O("match", @"DOMAIN-REGEX,^foo,bar$|^blocked\.example$") });
+            var imported = ImportedRuleSets.Parse(System.Text.Encoding.UTF8.GetBytes("rules: ['DOMAIN,native-import.example,External', 'MATCH,External']\nproxies: [{password: discarded-secret}]"), "Generic");
+            M(imported, "mappings")["External"] = "DIRECT";
+            policy["rule_sets"] = new System.Text.Json.Nodes.JsonArray(imported);
+            if (Canonical(imported).Contains("discarded-secret")) throw new BuildException("规则集导入包含无关数据");
+            session.Documents["policy.yaml"].Set(policy); session.Save();
+            File.WriteAllBytes(Path.Combine(session.ProjectPath, "subscrip", "AirportA.yaml"), YamlData.Bytes(O("proxies", A(new System.Text.Json.Nodes.JsonNode?[] { O("name", "香港-示例", "type", "http", "server", "127.0.0.1", "port", "8080") }), "rules", A("DOMAIN,subscription-import.example,DIRECT"))));
+            var subscriptionRules = SubscriptionRuleImport.ReadAsync(session, 0, false).GetAwaiter().GetResult();
+            if (L(subscriptionRules, "rules").Count != 1 || Canonical(subscriptionRules).Contains("香港-示例")) throw new BuildException("项目订阅规则导入原生自检失败");
+            var built = new BuildEngine().BuildProjectAsync(workspace, "SmokeTest", new(Offline: true)).GetAwaiter().GetResult();
+            var nativeRules = L(Map(YamlData.Read(built.OutputPath), "native output"), "rules").Select(x => S(x)).ToArray();
+            if (!nativeRules.Contains("DOMAIN,native-import.example,DIRECT") || nativeRules.Contains("MATCH,DIRECT")) throw new BuildException("规则集映射或兜底策略原生自检失败");
+            if (!nativeRules.Contains(@"DOMAIN-REGEX,^api[0-9]{1,3}\.example$,REJECT")
+                || !nativeRules.Contains(@"DOMAIN-REGEX,^foo,bar$|^blocked\.example$,REJECT")
+                || nativeRules.Count(x => x == "IP-CIDR,127.0.0.0/8,REJECT,no-resolve") != 2
+                || Array.IndexOf(nativeRules, "DOMAIN,native-rule.example,PASS") < 0
+                || Array.IndexOf(nativeRules, "DOMAIN,native-rule.example,PASS") >= Array.IndexOf(nativeRules, "DOMAIN,native-rule.example,REJECT")
+                || I(built.Report, "rule_compiler_version", 0) != Rules.Version) throw new BuildException("原生规则语义自检失败");
+            if (S(Rules.ParseRemote(System.Text.Encoding.UTF8.GetBytes("*.example.com"), O("behavior", "domain"))[0]) != @"DOMAIN-REGEX,(?i)^[^.]+\.example\.com$,DIRECT"
+                || S(Rules.ParseRemote(System.Text.Encoding.UTF8.GetBytes("127.0.0.0/8"), O("behavior", "ipcidr"))[0]) != "IP-CIDR,127.0.0.0/8,DIRECT"
+                || Rules.WithAction(System.Text.Json.Nodes.JsonValue.Create("IN-PORT,7890"), "REJECT") != "IN-PORT,7890,REJECT") throw new BuildException("原生规则格式自检失败");
+            var autoDomains = Rules.ParseRemote(System.Text.Encoding.UTF8.GetBytes("payload: ['*.wechat.com', 'btrace.qq.com', '+.example.org']"), O("url", "https://example.com/download?id=wechat"));
+            if (!autoDomains.Select(x => S(x)).SequenceEqual([@"DOMAIN-REGEX,(?i)^[^.]+\.wechat\.com$,DIRECT", "DOMAIN,btrace.qq.com,DIRECT", "DOMAIN-SUFFIX,example.org,DIRECT"]))
+                throw new BuildException("域名名单自动识别自检失败");
+            if (I(built.Report, "project_ordering_version", 0) != ProjectOrdering.Version || S(L(built.Report, "priority_order")[0]) != "1") throw new BuildException("订阅顺序自检失败");
+            var grouped = O("order", A("proxy", "reject", "direct"));
+            ProjectOrdering.SetRemoteUrls(grouped, "direct", "https://example.com/direct");
+            ProjectOrdering.SetRemoteUrls(grouped, "proxy", "https://example.com/a\nhttps://example.com/b");
+            if (!ProjectOrdering.OrderedRemotes(grouped).Select(x => S(x, "url")).SequenceEqual(["https://example.com/a", "https://example.com/b", "https://example.com/direct"])) throw new BuildException("远程名单分组自检失败");
+            var manual = new ManualRuleEditor(A("DOMAIN,api.example.com", "GEOIP,LAN,no-resolve", "example.com", "DOMAIN-KEYWORD,uuyc"), true);
+            if (!manual.LanEnabled || manual.Text(ManualRuleKind.Suffix) != "example.com" || manual.Text(ManualRuleKind.Exact) != "api.example.com") throw new BuildException("域名分栏自检失败");
+            manual.SetLan(false); manual.Replace(ManualRuleKind.Suffix, "example.com\nnew.example");
+            if (manual.LanEnabled || !manual.Text(ManualRuleKind.Other).Contains("DOMAIN-KEYWORD,uuyc")) throw new BuildException("局域网直连编辑自检失败");
+            AppBuilder.Configure<App>().UsePlatformDetect().SetupWithoutStarting();
+            var window = new MainWindow(new AppPreferences(Path.Combine(workspace, "preferences.json")), workspace);
+            int pages = 0;
+            foreach (string page in MainWindow.PageIds)
+            {
+                window.Navigate(page); window.Measure(new Size(1220, 850)); window.Arrange(new Rect(0, 0, 1220, 850)); window.UpdateLayout(); Dispatcher.UIThread.RunJobs(); pages++;
+            }
+            if (window.Session?.Dirty == true) throw new BuildException("打开界面意外修改了配置");
+            window.SelectProject("Example"); window.Navigate("policy"); window.Measure(new Size(1220, 850)); window.Arrange(new Rect(0, 0, 1220, 850)); window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            if (window.Session?.IsReadOnly != true || !File.Exists(Path.Combine(workspace, "config", "Example", "policy.yaml")) || BuildEngine.DiscoverProjects(workspace).Contains("Example")) throw new BuildException("内置示例只读自检失败");
+            var inspection = ParameterInspection.Inspect(session).ToArray();
+            if (inspection.Any(x => x.State == "fail")) throw new BuildException("参数检查原生自检失败：" + string.Join("；", inspection.Where(x => x.State == "fail").Select(x => x.Message)));
+            Task.Run(() => CheckRuleUrlAsync(session)).GetAwaiter().GetResult();
+            Task.Run(() => CheckSubscriptionPullAsync(workspace)).GetAwaiter().GetResult();
+            Task.Run(CheckResidenceProbeAsync).GetAwaiter().GetResult();
+            var defaults = session.Policy; defaults["proxy"] = A("DOMAIN,native-default.example"); RuleDefaults.Save(workspace, defaults);
+            if (S(L(new WorkspaceSession(workspace, "Example").Policy, "proxy")[0]) != "DOMAIN,native-default.example") throw new BuildException("默认分流模板原生自检失败");
+            if (ImportedRuleSets.Sets(new WorkspaceSession(workspace, "Example").Policy).Count != 1) throw new BuildException("默认规则集原生自检失败");
+            WorkspaceSession.CreateProject(workspace, "Copy", "SmokeTest");
+            ProjectStore.Rename(workspace, "SmokeTest", "Renamed");
+            if (!new WorkspaceSession(workspace, "Renamed").OutputIsCurrent()) throw new BuildException("重命名丢失了生成输出");
+            string archive = ProjectStore.Delete(workspace, "Renamed");
+            if (!File.Exists(Path.Combine(archive, "config", "settings.yaml")) || !BuildEngine.DiscoverProjects(workspace).SequenceEqual(["Copy"])) throw new BuildException("项目删除自检失败");
+            ProjectStore.Restore(workspace, archive, "Recovered");
+            var recovered = new WorkspaceSession(workspace, "Recovered"); recovered.RenameSource(0, "RenamedSubscription"); recovered.Save();
+            Task.Run(() => new BuildEngine().BuildProjectAsync(workspace, "Recovered", new(Offline: true))).GetAwaiter().GetResult();
+            if (!recovered.OutputIsCurrent()) throw new BuildException("订阅更名或恢复项目自检失败");
+            var clashSettings = recovered.Settings; clashSettings["target"] = "clash"; recovered.Documents["settings.yaml"].Set(clashSettings); recovered.Save();
+            var clash = Task.Run(() => new BuildEngine().BuildProjectAsync(workspace, "Recovered", new(Offline: true))).GetAwaiter().GetResult();
+            if (S(clash.Report, "target") != "clash" || File.Exists(Path.Combine(recovered.OutputPath, "HomeChain.MC2DNS.yaml")) || !recovered.OutputIsCurrent()) throw new BuildException("Clash 目标与失效 DNS 清理原生自检失败");
+            Task.Run(() => CheckEntranceGroups(workspace)).GetAwaiter().GetResult();
+            Task.Run(() => CheckDnsPrivacy(workspace)).GetAwaiter().GetResult();
+            File.WriteAllText(resultPath, O("ok", true, "pages", pages, "project_crud", true, "ordering", true, "restore_and_subscription_identity", true, "classified_rules", true, "readonly_example", true, "rule_defaults", true, "parameter_inspection", true, "parameter_remote_urls", true, "standalone_subscription_pull", true, "forced_subscription_cache_fallback", true, "residence_proxy_probe", true, "rule_semantics", true, "rule_semantics_v2", true, "domain_list_auto_detection", true, "clash_target_and_dns_cleanup", true, "airport_entrance_groups", true, "dns_privacy", true, "dns_default_recovery", true, "dependency_fingerprint", true, "proxy_count", I(built.Report, "proxy_count", 0), "mode", "native UI initialization, isolated builds and loopback rule/subscription/proxy requests; no window shown").ToJsonString(JsonOptions));
+            return 0;
+        }
+        catch (Exception ex) { File.WriteAllText(resultPath, O("ok", false, "error_type", ex.GetType().Name, "error", ex is BuildException ? ex.Message : "原生界面或生成自检失败").ToJsonString(JsonOptions)); return 1; }
+        finally { if (Directory.Exists(workspace)) Directory.Delete(workspace, true); }
+    }
+    static void CheckEntranceGroups(string workspace)
+    {
+        WorkspaceSession.CreateProject(workspace, "EntranceSmoke");
+        var session = new WorkspaceSession(workspace, "EntranceSmoke");
+        var settings = session.Settings; settings["validation"] = O();
+        settings["sources"] = A(new System.Text.Json.Nodes.JsonNode?[] { O("name", "First", "enabled", true), O("name", "Second", "enabled", true) });
+        session.Documents["settings.yaml"].Set(settings);
+        session.Documents["policy.yaml"].Set(O("rule_source", "subscription", "extra_rules_enabled", false));
+        session.SetResidences(A(new System.Text.Json.Nodes.JsonNode?[] { O("name", "Home", "type", "socks5", "server", "127.0.0.1", "port", 9000, "udp", false) })); session.Save();
+        var nodes = A(new System.Text.Json.Nodes.JsonNode?[] { O("name", "日本", "type", "http", "server", "127.0.0.1", "port", 8080), O("name", "新加坡", "type", "http", "server", "127.0.0.1", "port", 8081) });
+        var original = O("proxies", nodes, "proxy-groups", A(new System.Text.Json.Nodes.JsonNode?[] { O("name", "Original", "type", "select", "proxies", A("日本", "新加坡")) }), "rules", A("MATCH,Original"));
+        File.WriteAllBytes(session.SnapshotPath("First"), YamlData.Bytes(original));
+        File.WriteAllBytes(session.SnapshotPath("Second"), YamlData.Bytes(O("proxies", nodes.DeepClone())));
+        var built = new BuildEngine().BuildProjectAsync(workspace, "EntranceSmoke", new(Offline: true)).GetAwaiter().GetResult();
+        var configuration = Map(YamlData.Read(built.OutputPath), "native baseline output");
+        var groups = L(configuration, "proxy-groups").OfType<System.Text.Json.Nodes.JsonObject>().ToDictionary(x => S(x, "name"));
+        if (Canonical(groups["机场入口"]["proxies"]) != Canonical(A("聚合组", "First", "Second")) || L(groups["聚合组"], "proxies").Count != 4
+            || Canonical(groups["住宅出口"]["proxies"]) != Canonical(A("[链式] Home", "[直连] Home"))
+            || !L(configuration, "proxies").Any(x => S(Map(x, "node"), "name") == "[链式] Home" && S(Map(x, "node"), "dialer-proxy") == "机场入口" && !B(Map(x, "node"), "udp"))
+            || configuration.ContainsKey("dns")) throw new BuildException("机场入口分组或住宅路径原生自检失败");
+    }
+    static async Task CheckDnsPrivacy(string workspace)
+    {
+        var session = new WorkspaceSession(workspace, "EntranceSmoke");
+        string before = File.ReadAllText(Path.Combine(session.OutputPath, "HomeChain.yaml"));
+        var policy = session.Policy; DnsPrivacy.SetEnabled(policy, true); session.Documents["policy.yaml"].Set(policy); session.Save();
+        var enhanced = await new BuildEngine().BuildProjectAsync(workspace, "EntranceSmoke", new(Offline: true));
+        var config = Map(YamlData.Read(enhanced.OutputPath), "privacy config");
+        var fragment = Map(YamlData.Read(Path.Combine(session.OutputPath, "HomeChain.MC2DNS.yaml")), "privacy fragment");
+        if (S(M(config, "dns"), "enhanced-mode") != "fake-ip" || S(M(fragment, "dns"), "enhanced-mode") != "fake-ip"
+            || !L(M(config, "dns"), "nameserver").All(x => S(x).EndsWith("#住宅出口")) || GeoRules.RequiredDatabases(config).Length != 0)
+            throw new BuildException("Fake-IP 隐私增强原生自检失败");
+        policy = session.Policy; DnsPrivacy.SetEnabled(policy, false); session.Documents["policy.yaml"].Set(policy); session.Save();
+        await new BuildEngine().BuildProjectAsync(workspace, "EntranceSmoke", new(Offline: true));
+        if (File.ReadAllText(enhanced.OutputPath) != before || File.Exists(Path.Combine(session.OutputPath, "HomeChain.MC2DNS.yaml"))
+            || File.ReadAllText(Path.Combine(session.OutputPath, "HomeChain" + DnsPrivacy.DefaultSuffix)) != DnsPrivacy.DefaultText()
+            || !File.Exists(Path.Combine(session.OutputPath, "HomeChain" + DnsPrivacy.GuideSuffix))) throw new BuildException("默认 DNS 恢复原生自检失败");
+    }
+    static async Task CheckResidenceProbeAsync()
+    {
+        var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0); listener.Start();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        try
+        {
+            int port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+            var reply = Task.Run(async () =>
+            {
+                using var client = await listener.AcceptTcpClientAsync(timeout.Token);
+                var stream = client.GetStream(); using var reader = new StreamReader(stream);
+                while (await reader.ReadLineAsync(timeout.Token) is { Length: > 0 }) { }
+                byte[] body = System.Text.Encoding.UTF8.GetBytes("ip=203.0.113.9\n");
+                await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n"), timeout.Token);
+                await stream.WriteAsync(body, timeout.Token);
+            });
+            var result = await ResidenceProbe.CheckAsync(O("name", "local-probe", "type", "http", "server", "127.0.0.1", "port", port), timeout.Token, new Uri("http://probe.invalid/trace"));
+            await reply;
+            if (result.State != "pass" || result.ExitIp != "203.0.113.9") throw new BuildException("住宅代理检测原生自检失败");
+        }
+        finally { timeout.Cancel(); listener.Stop(); }
+    }
+    static async Task CheckRuleUrlAsync(WorkspaceSession session)
+    {
+        var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0); listener.Start();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        string original = session.Documents["policy.yaml"].Text;
+        try
+        {
+            string url = "http://127.0.0.1:" + ((System.Net.IPEndPoint)listener.LocalEndpoint).Port + "/";
+            var reply = Task.Run(async () =>
+            {
+                using var client = await listener.AcceptTcpClientAsync(timeout.Token); var stream = client.GetStream();
+                using var reader = new StreamReader(stream);
+                while (await reader.ReadLineAsync(timeout.Token) is { Length: > 0 }) { }
+                byte[] body = System.Text.Encoding.UTF8.GetBytes("DOMAIN,native-check.example\n");
+                await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n"), timeout.Token);
+                await stream.WriteAsync(body, timeout.Token);
+            });
+            var policy = session.Policy; policy["remote_rules"] = A(new System.Text.Json.Nodes.JsonNode?[] { O("proxy", A(url)) }); session.Documents["policy.yaml"].Set(policy);
+            bool checkedUrl = false;
+            await foreach (var row in ParameterInspection.InspectAsync(session, timeout.Token))
+                if (row.Key is not null && row.State == "pass" && row.Message.Contains(url)) checkedUrl = true;
+            await reply;
+            if (!checkedUrl) throw new BuildException("参数检查远程名单原生自检失败");
+        }
+        finally { session.Documents["policy.yaml"].SetText(original); timeout.Cancel(); listener.Stop(); }
+    }
+    static async Task CheckSubscriptionPullAsync(string workspace)
+    {
+        WorkspaceSession.CreateProject(workspace, "PullProbe", "SmokeTest");
+        var session = new WorkspaceSession(workspace, "PullProbe");
+        var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0); listener.Start();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        try
+        {
+            string url = "http://127.0.0.1:" + ((System.Net.IPEndPoint)listener.LocalEndpoint).Port + "/";
+            var replies = Task.Run(async () =>
+            {
+                for (int i = 0; i < 2; i++)
+                {
+                    using var client = await listener.AcceptTcpClientAsync(timeout.Token); var stream = client.GetStream(); using var reader = new StreamReader(stream);
+                    while (await reader.ReadLineAsync(timeout.Token) is { Length: > 0 }) { }
+                    byte[] body = System.Text.Encoding.UTF8.GetBytes("proxies: [{name: 香港-pull, type: http, server: localhost, port: '8080'}]");
+                    int status = i == 0 ? 200 : 403;
+                    await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes($"HTTP/1.1 {status} Response\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n"), timeout.Token);
+                    await stream.WriteAsync(body, timeout.Token);
+                }
+            });
+            var settings = session.Settings; Map(L(settings, "sources")[0], "订阅")["url"] = url; session.Documents["settings.yaml"].Set(settings);
+            var pulled = await SubscriptionUpdater.PullAsync(session, 0, timeout.Token);
+            if (pulled.NodeCount != 1 || Directory.Exists(session.OutputPath)) throw new BuildException("单独拉取订阅原生自检失败");
+            var built = await new BuildEngine().BuildProjectAsync(workspace, "PullProbe", new(Force: true), cancellation: timeout.Token);
+            if (!L(built.Report, "subscription_fetches").Any(x => S(Map(x, "订阅"), "status") == "snapshot_fallback")) throw new BuildException("强制拉取失败后使用缓存原生自检失败");
+            await replies;
+            ProjectStore.Delete(workspace, "PullProbe");
+        }
+        finally { timeout.Cancel(); listener.Stop(); }
+    }
+}
