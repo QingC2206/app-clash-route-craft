@@ -1,2 +1,5 @@
 # Keep the POSIX launcher usable after a checkout on Windows.
 scripts/install-router-asn.sh text eol=lf
+# Packaged public documents must have identical bytes on Windows and Linux runners.
+*.md text eol=lf
+LICENSE text eol=lf

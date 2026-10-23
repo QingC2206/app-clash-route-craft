@@ -111,7 +111,7 @@ def archive(path, source_root=None):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=["source", "archive"])
+    parser.add_argument("mode", choices=["source", "archive", "verify"])
     parser.add_argument("--github-output", action="store_true")
     args = parser.parse_args()
     if args.mode == "source":
@@ -122,5 +122,10 @@ if __name__ == "__main__":
         print(f"PASS source privacy paths and version {result}")
     else:
         digest = archive(ROOT / f"releases/{NAME}.zip", ROOT)
-        (ROOT / "releases/SHA256SUMS.txt").write_text(f"{digest}  {NAME}.zip\n", encoding="utf-8")
+        checksum = ROOT / "releases/SHA256SUMS.txt"
+        expected = f"{digest}  {NAME}.zip\n"
+        if args.mode == 'verify':
+            require(checksum.read_text(encoding='utf-8') == expected, 'Transferred archive checksum mismatch')
+        else:
+            checksum.write_text(expected, encoding="utf-8")
         print("PASS single AOT archive, public inventory, documentation and checksums")

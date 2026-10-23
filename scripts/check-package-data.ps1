@@ -21,6 +21,12 @@ try {
     Write-Fixture 'workspace/docs/private-notes.md' 'must not ship'
     Write-Fixture 'workspace/docs/screenshots/private.png' 'must not ship'
     Write-Fixture 'workspace/docs/screenshots/router-login.json' 'must not ship'
+    $licenseNames = @('Avalonia-LICENSE.txt','AvaloniaEdit-LICENSE.txt','YamlDotNet-LICENSE.txt',
+        'dotnet-runtime-LICENSE.txt','SkiaSharp-LICENSE.txt','ANGLE-LICENSE.txt','HarfBuzz-LICENSE.txt',
+        'Mihomo-LICENSE.txt','dotnet-LICENSE.TXT','dotnet-THIRD-PARTY-NOTICES.TXT')
+    foreach ($name in $licenseNames) { Write-Fixture "workspace/artifacts/licenses/$name" 'public fixture license' }
+    Write-Fixture 'workspace/artifacts/licenses/router-login.json' 'must not ship'
+    Write-Fixture 'workspace/artifacts/licenses/private-notes.md' 'must not ship'
     foreach ($name in @('av_libglesv2.dll','libSkiaSharp.dll','libHarfBuzzSharp.dll')) { Write-Fixture "workspace/artifacts/publish/win-x64-aot/$name" 'fixture' }
     Copy-Item -LiteralPath (Join-Path $source "$PublishDirectory/ClashRouteCraft.exe") -Destination (Join-Path $testRepository 'artifacts/publish/win-x64-aot/ClashRouteCraft.exe')
     New-Item -ItemType Directory -Path (Join-Path $testRepository 'scripts') -Force | Out-Null
