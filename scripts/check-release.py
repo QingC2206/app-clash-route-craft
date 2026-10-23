@@ -22,7 +22,8 @@ for release in manifest:
     assert hashlib.sha256(archive.read_bytes()).hexdigest() == release["sha256"]
     guard.archive(archive, root)
     with tempfile.TemporaryDirectory(prefix="homechain release check ") as temporary:
-        destination = Path(temporary)
+        # Windows hosted runners may spell TEMP with an 8.3 username alias.
+        destination = Path(temporary).resolve()
         with zipfile.ZipFile(archive) as package:
             for member in package.namelist():
                 parts = PurePosixPath(member).parts
