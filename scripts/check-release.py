@@ -2,6 +2,7 @@
 from pathlib import Path, PurePosixPath
 import hashlib
 import json
+import re
 import subprocess
 import tempfile
 import zipfile
@@ -25,6 +26,16 @@ for release in manifest:
                 assert not member.lower().endswith((".py", ".log", ".data", ".pdb", ".nupkg"))
             package.extractall(destination)
         directory = destination / release["name"]
+        # Offline README language links, screenshots and referenced guides must resolve.
+        expected_images = {"overview.png", "subscriptions.png", "residential.png", "routing.png", "custom-rules.png", "dns-privacy.png", "output.png"}
+        assert {p.name for p in (directory / "docs/screenshots").glob("*.png")} == expected_images
+        for relative in ["README.md", "README.en.md", "docs/usage.md", "docs/validation.md", "docs/router-asn.md", "docs/screenshots/README.md", *["docs/screenshots/" + name for name in expected_images]]:
+            assert (directory / relative).read_bytes() == (root / relative).read_bytes(), relative
+        for document in directory.rglob("*.md"):
+            for target in re.findall(r'!?\[[^\]]*\]\(([^)]+)\)', document.read_text(encoding="utf-8-sig")):
+                if target.startswith(("https://", "http://", "#")): continue
+                linked = (document.parent / target.split("#", 1)[0]).resolve()
+                assert linked.is_relative_to(directory) and linked.is_file(), f"Broken packaged link: {document.name}: {target}"
         sums = (directory / "SHA256SUMS.txt").read_text(encoding="utf-8").splitlines()
         for entry in sums:
             checksum, relative = entry.split("  ", 1)
@@ -50,5 +61,5 @@ for release in manifest:
         init = subprocess.run([str(directory / "ClashRouteCraft.exe"), "--initialize", "--workspace", str(initialized), "--result", str(init_result)], capture_output=True, timeout=20)
         assert init.returncode == 0 and len(json.loads(init_result.read_text(encoding="utf-8"))["restored"]) == 1 and custom.read_bytes() == before
         assert not (initialized / "resources").exists()
-        print(f"PASS {release['name']}: inventory, SHA-256 and native UI/build smoke check after extraction to a path with spaces")
+        print(f"PASS {release['name']}: bilingual README, 7 screenshots, offline links, inventory, SHA-256 and native smoke check after extraction")
 print("RESULT portable distribution verified")

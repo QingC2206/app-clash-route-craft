@@ -103,9 +103,19 @@ try {
         foreach ($name in @('ClashRouteCraft.exe','av_libglesv2.dll','libSkiaSharp.dll','libHarfBuzzSharp.dll')) {
             Copy-Item -LiteralPath (Join-Path $taskPublish $name) -Destination (Join-Path $staged $name)
         }
-        foreach ($name in @('LICENSE','THIRD-PARTY-NOTICES.md')) { Copy-Item -LiteralPath (Join-Path $taskRoot $name) -Destination (Join-Path $staged $name) }
-        Copy-Item -LiteralPath (Join-Path $taskRoot 'docs/usage.md') -Destination (Join-Path $staged 'README.md')
-        Copy-Item -LiteralPath (Join-Path $taskRoot 'docs/validation.md') -Destination (Join-Path $staged 'VALIDATION.md')
+        # Explicit public-file inventory: never recursively copy a workspace or docs folder.
+        $publicDocuments = @(
+            'LICENSE', 'THIRD-PARTY-NOTICES.md', 'README.md', 'README.en.md',
+            'docs/usage.md', 'docs/validation.md', 'docs/router-asn.md', 'docs/screenshots/README.md',
+            'docs/screenshots/overview.png', 'docs/screenshots/subscriptions.png',
+            'docs/screenshots/residential.png', 'docs/screenshots/routing.png',
+            'docs/screenshots/custom-rules.png', 'docs/screenshots/dns-privacy.png', 'docs/screenshots/output.png'
+        )
+        foreach ($name in $publicDocuments) {
+            $documentTarget = Join-Path $staged $name
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($documentTarget)) -Force | Out-Null
+            Copy-Item -LiteralPath (Join-Path $taskRoot $name) -Destination $documentTarget
+        }
         $licenses = Join-Path $taskRoot 'artifacts/licenses'
         if (Test-Path -LiteralPath $licenses) { Copy-Item -LiteralPath $licenses -Destination (Join-Path $staged 'licenses') -Recurse }
         $files = @(Get-ChildItem -LiteralPath $staged -Recurse -File)
