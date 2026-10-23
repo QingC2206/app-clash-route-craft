@@ -6,8 +6,12 @@ import re
 import subprocess
 import tempfile
 import zipfile
+import importlib.util
 
 root = Path(__file__).resolve().parents[1]
+spec = importlib.util.spec_from_file_location('release_guard', root / 'scripts/release-guard.py')
+guard = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(guard)
 manifest = json.loads((root / "releases/release-manifest.json").read_text(encoding="utf-8-sig"))
 assert {entry["name"] for entry in manifest} == {"ClashRouteCraft-win-x64"}
 assert len(manifest) == 1 and len({entry["version"] for entry in manifest}) == 1
@@ -16,6 +20,7 @@ for release in manifest:
     assert archive == root / "releases" / (release["name"] + ".zip")
     assert Path(release["directory"]) == root / "releases" / release["name"]
     assert hashlib.sha256(archive.read_bytes()).hexdigest() == release["sha256"]
+    guard.archive(archive, root)
     with tempfile.TemporaryDirectory(prefix="homechain release check ") as temporary:
         destination = Path(temporary)
         with zipfile.ZipFile(archive) as package:
@@ -29,7 +34,7 @@ for release in manifest:
         # Offline README language links, screenshots and referenced guides must resolve.
         expected_images = {"overview.png", "subscriptions.png", "residential.png", "routing.png", "custom-rules.png", "dns-privacy.png", "output.png"}
         assert {p.name for p in (directory / "docs/screenshots").glob("*.png")} == expected_images
-        for relative in ["README.md", "README.en.md", "docs/usage.md", "docs/validation.md", "docs/router-asn.md", "docs/screenshots/README.md", *["docs/screenshots/" + name for name in expected_images]]:
+        for relative in ["README.md", "README.en.md", "docs/usage.md", "docs/validation.md", "docs/router-asn.md", "docs/releasing.md", "docs/screenshots/README.md", *["docs/screenshots/" + name for name in expected_images]]:
             assert (directory / relative).read_bytes() == (root / relative).read_bytes(), relative
         for document in directory.rglob("*.md"):
             for target in re.findall(r'!?\[[^\]]*\]\(([^)]+)\)', document.read_text(encoding="utf-8-sig")):
@@ -41,7 +46,7 @@ for release in manifest:
             checksum, relative = entry.split("  ", 1)
             assert hashlib.sha256((directory / relative).read_bytes()).hexdigest() == checksum
             assert hashlib.sha256((Path(release["directory"]) / relative).read_bytes()).hexdigest() == checksum
-        assert len(list(directory.rglob("*"))) >= release["files"]
+        assert len([p for p in directory.rglob("*") if p.is_file()]) == release["files"]
         response = destination / "native smoke result.json"
         process = subprocess.run([str(directory / "ClashRouteCraft.exe"), "--self-check", "--result", str(response)], capture_output=True, timeout=45)
         result = json.loads(response.read_text(encoding="utf-8"))

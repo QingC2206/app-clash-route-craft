@@ -4,7 +4,7 @@ This package contains a local build of ClashRouteCraft and the following third-p
 
 | Component | Version used | Project / source | License |
 | --- | --- | --- | --- |
-| .NET runtime / Native AOT | 10.0.13 | https://github.com/dotnet/runtime | MIT and included third-party notices |
+| .NET runtime / Native AOT | .NET 10 servicing version resolved by the build SDK (recorded in build logs) | https://github.com/dotnet/runtime | MIT and included third-party notices |
 | Avalonia | 11.3.22 | https://github.com/AvaloniaUI/Avalonia | MIT |
 | AvaloniaEdit | 11.4.1 | https://github.com/AvaloniaUI/AvaloniaEdit | MIT |
 | YamlDotNet | 18.1.0 | https://github.com/aaubry/YamlDotNet | MIT |

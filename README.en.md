@@ -136,6 +136,8 @@ python scripts/check-release.py
 
 ## Documentation and license
 
+Push a `v*` tag matching the application version to validate, build the single AOT edition and publish a Release. Manual Actions runs validate without publishing. See the [automated release guide](docs/releasing.md) for steps and privacy-check limitations.
+
 [Usage (Chinese)](docs/usage.md) · [ASN setup (Chinese)](docs/router-asn.md) · [Validation (Chinese)](docs/validation.md) · [Report an issue](https://github.com/QingC2206/app-clash-route-craft/issues)
 
 Source code is under the [MIT License](LICENSE). Third-party components retain their own licenses; see [third-party notices](THIRD-PARTY-NOTICES.md).

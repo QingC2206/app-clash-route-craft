@@ -106,7 +106,7 @@ try {
         # Explicit public-file inventory: never recursively copy a workspace or docs folder.
         $publicDocuments = @(
             'LICENSE', 'THIRD-PARTY-NOTICES.md', 'README.md', 'README.en.md',
-            'docs/usage.md', 'docs/validation.md', 'docs/router-asn.md', 'docs/screenshots/README.md',
+            'docs/usage.md', 'docs/validation.md', 'docs/router-asn.md', 'docs/releasing.md', 'docs/screenshots/README.md',
             'docs/screenshots/overview.png', 'docs/screenshots/subscriptions.png',
             'docs/screenshots/residential.png', 'docs/screenshots/routing.png',
             'docs/screenshots/custom-rules.png', 'docs/screenshots/dns-privacy.png', 'docs/screenshots/output.png'
@@ -117,7 +117,15 @@ try {
             Copy-Item -LiteralPath (Join-Path $taskRoot $name) -Destination $documentTarget
         }
         $licenses = Join-Path $taskRoot 'artifacts/licenses'
-        if (Test-Path -LiteralPath $licenses) { Copy-Item -LiteralPath $licenses -Destination (Join-Path $staged 'licenses') -Recurse }
+        if (Test-Path -LiteralPath $licenses) {
+            $licenseNames = @('Avalonia-LICENSE.txt','AvaloniaEdit-LICENSE.txt','YamlDotNet-LICENSE.txt',
+                'dotnet-runtime-LICENSE.txt','SkiaSharp-LICENSE.txt','ANGLE-LICENSE.txt','HarfBuzz-LICENSE.txt',
+                'Mihomo-LICENSE.txt','dotnet-LICENSE.TXT','dotnet-THIRD-PARTY-NOTICES.TXT')
+            New-Item -ItemType Directory -Path (Join-Path $staged 'licenses') | Out-Null
+            foreach ($name in $licenseNames) {
+                Copy-Item -LiteralPath (Join-Path $licenses $name) -Destination (Join-Path $staged "licenses/$name")
+            }
+        }
         $files = @(Get-ChildItem -LiteralPath $staged -Recurse -File)
         $checksums = $files | ForEach-Object { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()+'  '+$_.FullName.Substring($staged.Length+1).Replace('\','/') }
         [IO.File]::WriteAllLines((Join-Path $staged 'SHA256SUMS.txt'),$checksums,[Text.UTF8Encoding]::new($false))

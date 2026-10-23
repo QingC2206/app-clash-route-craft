@@ -1,3 +1,4 @@
+param([string]$PublishDirectory = 'artifacts/publish/win-x64-aot')
 # Exercise the real packaging script in an isolated fixture, with no personal data.
 $ErrorActionPreference = 'Stop'
 $source = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -13,7 +14,7 @@ try {
     Write-Fixture 'workspace/docs/usage.md' 'test'
     Write-Fixture 'workspace/docs/validation.md' 'test'
     Write-Fixture 'workspace/THIRD-PARTY-NOTICES.md' 'test'
-    $publicDocuments = @('README.md','README.en.md','docs/router-asn.md','docs/screenshots/README.md',
+    $publicDocuments = @('README.md','README.en.md','docs/router-asn.md','docs/releasing.md','docs/screenshots/README.md',
         'docs/screenshots/overview.png','docs/screenshots/subscriptions.png','docs/screenshots/residential.png',
         'docs/screenshots/routing.png','docs/screenshots/custom-rules.png','docs/screenshots/dns-privacy.png','docs/screenshots/output.png')
     foreach ($name in $publicDocuments) { Write-Fixture "workspace/$name" "public fixture: $name" }
@@ -21,7 +22,7 @@ try {
     Write-Fixture 'workspace/docs/screenshots/private.png' 'must not ship'
     Write-Fixture 'workspace/docs/screenshots/router-login.json' 'must not ship'
     foreach ($name in @('av_libglesv2.dll','libSkiaSharp.dll','libHarfBuzzSharp.dll')) { Write-Fixture "workspace/artifacts/publish/win-x64-aot/$name" 'fixture' }
-    Copy-Item -LiteralPath (Join-Path $source 'artifacts/publish/win-x64-aot/ClashRouteCraft.exe') -Destination (Join-Path $testRepository 'artifacts/publish/win-x64-aot/ClashRouteCraft.exe')
+    Copy-Item -LiteralPath (Join-Path $source "$PublishDirectory/ClashRouteCraft.exe") -Destination (Join-Path $testRepository 'artifacts/publish/win-x64-aot/ClashRouteCraft.exe')
     New-Item -ItemType Directory -Path (Join-Path $testRepository 'scripts') -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $source 'scripts/Package.ps1') -Destination (Join-Path $testRepository 'scripts/Package.ps1')
     & (Join-Path $testRepository 'scripts/Package.ps1') | Out-Null

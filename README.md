@@ -136,6 +136,8 @@ python scripts/check-release.py
 
 ## 文档与许可证
 
+推送与程序版本一致的 `v*` 标签即可自动验证、构建唯一 AOT 版本并发布 Release。Actions 手动运行仅验证，不发布。具体步骤和隐私检查边界见 [自动发布指南](docs/releasing.md)。
+
 [使用指南](docs/usage.md) · [ASN 安装指南](docs/router-asn.md) · [验证说明](docs/validation.md) · [反馈问题](https://github.com/QingC2206/app-clash-route-craft/issues)
 
 源码采用 [MIT License](LICENSE)。第三方组件遵循各自许可证，见 [第三方说明](THIRD-PARTY-NOTICES.md)。
