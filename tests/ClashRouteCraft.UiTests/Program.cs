@@ -19,6 +19,7 @@ int checks = 0;
 void Check(bool condition, string message) { if (!condition) throw new Exception(message); checks++; }
 try
 {
+    if (args.Contains("--readme")) { ReadmeScreenshots.Run(workspace, output); return; }
     // A fresh installation must never discover or relocate another workspace.
     var externalWorkspace = Path.Combine(workspace, "external-owner");
     Directory.CreateDirectory(externalWorkspace);

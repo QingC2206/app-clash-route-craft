@@ -1,101 +1,141 @@
 # ClashRouteCraft
 
-面向 Clash / Mihomo 的可视化配置工作台，支持订阅管理、节点链路编排、规则集导入与策略映射、DNS 分流及配置生成校验。
+**中文** · [English](README.en.md)
 
-项目仓库名为 `app-clash-route-craft`，桌面程序为 `ClashRouteCraft.exe`。
+把订阅节点、静态住宅出口和自己的分流规则，组合成可检查、可导出的 Clash / Mihomo 配置。
 
-## 功能
+**[下载最新 Windows x64 AOT 版](https://github.com/QingC2206/app-clash-route-craft/releases/latest/download/ClashRouteCraft-win-x64.zip)** · [Release 与更新说明](https://github.com/QingC2206/app-clash-route-craft/releases/latest) · [SHA-256 校验文件](https://github.com/QingC2206/app-clash-route-craft/releases/latest/download/SHA256SUMS.txt)
 
-- 多项目管理，编辑订阅来源、筛选节点和配置住宅出口链路。
-- 从文件、URL、粘贴内容或已拉取的订阅导入规则集，查看规则并映射到本地策略；导入过程不带入订阅、节点或 DNS。
-- 默认采用列表中第一个启用的完整订阅作为规则基线，其余订阅只提供节点。保留主订阅的匹配条件与顺序，动作归并为本地直连、代理、拦截，不再保留广告、业务分类或“漏网之鱼”等独立策略组。
-- 所有代理规则统一使用“代理出口”，在客户端面板选择住宅出口或机场入口。有住宅时默认住宅，否则默认机场；代理选择中不混入 DIRECT。每个住宅保留 `[链式] 节点名`、`[直连] 节点名` 两条路径，不覆盖住宅的 UDP 或 TLS 校验选项。
-- 链式住宅经“机场入口”连接，可选“聚合组”或按实际订阅名称生成的分组；组内自动测速，不生成机场优先级分层。默认筛选香港、日本、台湾、新加坡，可在界面调整。
-- 主订阅保留原有 `hosts`；其他订阅和节点 provider 保留节点服务器所需的解析映射及连续域名别名，随订阅拉取、文件导入、缓存及生成传递。其他订阅的通配映射仅应用于实际节点及别名，避免带入无关业务域名；不同来源的同域名映射冲突或别名循环会阻止生成并保留旧输出。
-- 个人附加规则在订阅规则前匹配，可整体停用而保留内容；直连、代理、拦截按界面顺序整组匹配，手工、URL、导入和旧前置规则均按实际动作归组。冲突保留规则，按输出顺序匹配；代理目标归并到统一出口。界面可查看订阅策略归并结果，不合并多个订阅的规则。
-- 默认由 MC2 / 客户端管理 DNS。可一键选择 Fake-IP DNS 隐私增强，代理 DNS 默认经住宅出口，也可明确改选机场入口；不改变业务规则或 QUIC，不增加域名库或 DNS 规则集。
-- MC2 目标同时输出带版本来源的原装 Fake-IP DNS 恢复文件和应用说明。增强 DNS 需在 MC2 单独应用；关闭软件开关并重新导入主配置不会自动恢复路由器 DNS。主订阅自身的规则依赖仍需客户端支持。
-- 旧项目可在“规则与 DNS”中勾选“使用第一个启用订阅的规则”。旧的自定义编排和 DNS 编辑仍可显式选择，原设置不会被删除。
+当前发布：**[v1.16.5](https://github.com/QingC2206/app-clash-route-craft/releases/tag/v1.16.5)**。Windows x64 便携版，无需安装 .NET。程序负责生成配置，实际流量由你的 Clash / Mihomo 客户端或 MC2 路由器处理。
 
-## 默认数据与隐私
+![项目概览：从订阅、住宅出口、规则与 DNS 到配置输出](docs/screenshots/overview.png)
 
-内置 Example 模板位于 `src/ClashRouteCraft.Core/Resources/Defaults/`，只含通用占位配置，不带订阅规则，DNS 隐私增强默认关闭。首次启动或模板文件缺失时，程序恢复缺失文件，已有配置保留。填写并拉取完整订阅后即可生成，住宅出口可选。主订阅缓存若只有节点，必须重新拉取或导入完整配置，程序不会改用低优先级订阅的规则。
+> 本页截图由真实界面在独立临时工作区中渲染，全部使用虚构项目、示例订阅和保留测试地址，不含个人项目数据。界面当前为中文；英文使用说明见 [English README](README.en.md)。
 
-每份程序默认只使用自身目录中的工作区和设置，不读取本机旧版偏好设置，也不会搜索或自动迁移其他目录的数据。只有显式选择已有工作区或使用工作区命令行参数时，才会访问指定目录。
+## 安装与第一次使用
 
-旧版仅含节点的缓存无法还原已经丢失的 `hosts`。若原订阅依赖这些映射，请重新拉取订阅或导入完整文件，再重新生成；升级程序不会自行改写项目、订阅缓存或路由器配置。
+1. 下载 ZIP，**完整解压**到可写目录，运行 `ClashRouteCraft.exe`。不要在 ZIP 内直接运行，也不要只复制 EXE：同目录的 DLL 也需要保留。
+2. 首次启动会创建通用只读 `Example` 和默认模板。新建自己的项目，在“订阅与入口”填写并拉取订阅，或导入完整 Clash / Mihomo 配置。
+3. 默认采用**第一个启用订阅的规则**，其他订阅只提供节点。住宅出口可选，不配置住宅时可直接使用机场入口。
+4. 按需补充直连、代理、拦截规则。DNS 默认由客户端管理，首次使用可保持默认。
+5. 在“生成配置”选择目标、检查并生成，到“主配置输出”打开结果，将 `HomeChain.yaml` 导入对应客户端。生成文件不会自动应用到路由器。
 
-Mihomo 和 GeoData 是可选的独立下载资源，程序提示后再下载；发行包不内置这些二进制资源，也不包含 MC2 安装包。
+Mihomo 校验内核和 GeoData 不随 ZIP 分发，需要时通过应用的资源下载入口获取；MC2 安装包不在下载范围内。**只有节点、没有规则的缓存不能作为主规则来源**，需重新拉取或导入完整配置。
 
-路由器缺少 ASN 数据库时，可使用独立的 [PowerShell / Linux / macOS 安装工具](docs/router-asn.md)，通过 SSH 自动上传、校验和备份。每次成功生成都会从程序内置资源输出完整工具到 `output/<项目名>/router-asn/`，可单独复制使用。该工具不会改动项目、DNS 或重启 MC2。
+## 核心功能
 
-个人项目、订阅快照、节点凭据、生成结果、缓存、下载资源和日志不属于仓库内容。`.gitignore` 在任意目录层级排除 `config/`、`settings/`、`resources/`、`output/`、`subscrip/` 等运行数据，并排除备份、私钥、数据库和网络抓包文件；源码中的 `Resources/` 目录单独放行。YAML 默认排除，仅允许逐个列出的内置模板、测试夹具及 GitHub 工作流等公开配置；新增公开模板或夹具时需同步更新白名单。测试使用临时目录、回环地址和虚构项目。
+### 多订阅，一个规则基线
 
-提交前仍应检查暂存区的文件列表和内容。忽略规则不会移除已经跟踪的文件，也不能阻止 `git add -f`，不能清除已有提交中的敏感数据；复制进源码、文档或公开模板的凭据也需要人工复核。
+![两个示例订阅及主订阅规则来源](docs/screenshots/subscriptions.png)
 
-## 目录结构
+第一个启用的完整订阅提供规则，保留它的匹配条件和顺序；其余订阅只补充节点，不混合多套订阅规则。上下移动订阅即可改变规则来源。
 
-```text
-src/                       # 核心库与桌面应用
-tests/                     # .NET 回归测试与夹具
-scripts/                   # 构建、打包和验证脚本
-tools/python-reference/    # Python 参考实现及其测试
-docs/                      # 使用与验证说明
-ClashRouteCraft.slnx        # 解决方案
-```
+“机场入口”可选择全部订阅的**聚合组**，也可选择某一个订阅组。默认筛选香港、日本、台湾和新加坡，支持自定义筛选与测速。节点解析所需的 `hosts` 随缓存和生成传递，映射冲突或别名循环会提示处理，不会静默覆盖。
 
-为兼容已有部署，生成配置仍使用 `HomeChain.yaml`、`HomeChain.MC2DNS.yaml` 等原有文件名与规则标识。
-MC2 输出目录另含 `HomeChain.MC2DNS.Default.yaml`（MC2 1.2.2 ARM64 原装 DNS）和 `HomeChain.DNS-README.txt`。完整应用、恢复和隐私边界见 [使用说明](docs/usage.md)。
+### 住宅出口可选，代理统一出站
 
-## 构建与运行
+![住宅出口编辑：保留测试地址、虚构账户和隐藏密码](docs/screenshots/residential.png)
 
-桌面端使用 .NET 10 和 Avalonia，当前发布目标为 Windows x64。安装 .NET 10 SDK 后，在仓库根目录执行：
+代理业务统一指向“代理出口”，在客户端面板选择“住宅出口”或“机场入口”。配置了住宅时默认住宅，否则使用机场。
+
+| 路径 | 连接方式 |
+| --- | --- |
+| `[链式] 住宅节点名` | 先经过机场节点，再连接住宅代理，从住宅 IP 出站 |
+| `[直连] 住宅节点名` | 直接连接住宅代理，仍从住宅 IP 出站 |
+| 规则中的本地直连 `DIRECT` | 使用本地网络，不经过住宅或机场代理 |
+
+住宅“直连”描述的是**连接住宅代理的方式**，与业务规则中的 `DIRECT` 不同。住宅的 UDP 和 TLS 选项不会被统一覆盖，实际可用性仍取决于服务商和链路。
+
+### 三类分流，自定义规则优先
+
+![订阅规则基线、ASN 依赖检查和三类分流](docs/screenshots/routing.png)
+
+订阅中的动作归并为**本地直连、代理、拦截**。广告拦截等拒绝规则归入拦截；代理业务统一出口；未命中时沿用主订阅的兜底动作，不额外创建“漏网之鱼”分组。
+
+![个人附加规则及直连、代理、拦截组的优先级按钮](docs/screenshots/custom-rules.png)
+
+匹配原则：**全部用户自定义规则 → 主订阅规则**。自定义三组按界面从上到下匹配，上一组的手工名单、URL 名单及已有导入规则都优先于下一组。通过箭头调整顺序，不会因去重删除同条件的备用动作；`PASS` 等继续匹配语义仍保留。
+
+例如需要放行被拦截规则覆盖的域名，可把对应直连或代理组放在拦截组上方。也可整体停用个人附加规则，保留内容供后续恢复。
+
+“保存为 Example 规则”和“应用 Example 规则”可复用规则模板，应用时保留当前订阅、节点和 DNS。高级自定义模式还支持从文件、URL、粘贴内容或已拉取订阅导入规则集并映射策略；订阅基线无需重复导入同一套规则。
+
+### DNS 默认不干预，隐私增强按需开启
+
+![可选 Fake-IP DNS 隐私增强及住宅出口选择](docs/screenshots/dns-privacy.png)
+
+默认由客户端 / MC2 管理 DNS。可选的 **Fake-IP DNS 隐私增强**使用加密查询，代理 DNS 默认经住宅出口，也可改选机场入口；不额外引入域名库，不修改 QUIC。截图展示手动启用后的状态，**出厂默认关闭**。
+
+增强模式可减少代理域名在本地 DNS 上的暴露，但首次查询或建连可能更慢，依赖所选出口，也有部分应用的 Fake-IP 兼容性限制。它不保证绕过平台风控，也不接管浏览器独立的 DoH。
+
+**MC2 需要单独应用配套 DNS。** 开启后按说明应用 `HomeChain.MC2DNS.yaml`；关闭增强后，也要在 MC2 恢复默认或先前保存的 DNS，仅导入主 YAML 不会撤销 DNS 设置。程序同时输出基于 MC2 1.2.2 ARM64 的原装 Fake-IP 恢复模板及说明。步骤见 [使用与恢复指南](docs/usage.md)。
+
+### 检查依赖，明确生成结果
+
+![主配置输出显示规则来源、DNS 模式及实际校验状态](docs/screenshots/output.png)
+
+报告列出规则来源、DNS 模式、本机校验状态及目标数据库依赖。截图示例未配置校验内核，因此如实显示“未运行，仅检查结构”；**本机校验通过也不等于路由器已完成联网验证**。
+
+MC2 的 ASN 检查支持按来源排除 ASN 规则，或在目标设备准备好数据库后选择“保留 ASN”。主要输出如下：
+
+| 文件 / 目录 | 用途 |
+| --- | --- |
+| `HomeChain.yaml` | Clash / Mihomo / MC2 主配置 |
+| `HomeChain.report.json` | 生成与校验报告 |
+| `HomeChain.MC2DNS.yaml` | 启用相应 DNS 配置时生成的 MC2 配套文件 |
+| `HomeChain.MC2DNS.Default.yaml` | MC2 目标的指定版本原装 DNS 恢复模板 |
+| `HomeChain.DNS-README.txt` | MC2 DNS 应用与恢复说明 |
+| `router-asn/` | 独立 ASN 安装工具及说明 |
+
+ASN 工具支持 PowerShell、Linux / macOS 终端，要求电脑具备 Python 3.10+。工具先鉴权再下载，经 SSH 上传并核对 SHA-256、调用路由器内核验证，支持备份和失败回滚，不自动重启 MC2。SSH 主机记录按项目隔离，同地址的不同路由器互不干扰，同一项目指纹变化仍会拒绝连接。详见 [ASN 安装指南](docs/router-asn.md)。
+
+## 升级与数据保留
+
+1. 关闭正在使用的 ClashRouteCraft，备份自己的工作区。
+2. 将新版 ZIP 解压到临时目录，把程序文件、DLL 和随附文档复制到原安装目录，替换同名文件。
+3. **保留**原来的 `config/`、`settings/`、`output/`、`resources/`、`.cache/`、`.project-trash/` 等数据目录，不要删除整个安装目录后重装。
+4. 重新打开程序。要更新已有项目的输出工具时，重新生成该项目；账户文件 `router-login.json` 和项目 SSH 记录 `router-known_hosts` 会保留。配置需另行导入客户端才生效。
+
+默认工作区位于程序自身目录。换到新的安装目录会建立独立工作区；如需迁入旧数据，先备份，再使用应用的工作区迁入功能。便携版会将数据迁入新 EXE 目录，不是仅打开原路径；不会自动搜索或迁移其他目录。旧版只保存节点的缓存无法恢复丢失的规则或 `hosts`，需重新拉取完整订阅。
+
+## 隐私与边界
+
+- 内置模板仅含通用占位配置；分发包不含真实项目、订阅、节点凭据、生成结果、SSH 登录文件或下载资源。
+- `.gitignore` 排除运行数据、账户文件、SSH 主机记录和 macOS 缓存。忽略规则不能清除已提交的秘密，提交前仍需检查内容。
+- `router-login.json` 是可选的本地明文登录文件，请妥善保管，不要分享。
+- 桌面程序当前发布 Windows x64 版；Linux / macOS 支持指独立 ASN 脚本，不代表已有相应桌面发行包。
+- 生成配置、编译或升级程序不会自动修改路由器。使用结果前请在目标设备核对依赖和联网状态。
+
+## 开发与验证
+
+使用 .NET 10 和 Avalonia；开发运行需 .NET 10 SDK，Windows Native AOT 发布还需要 Visual Studio C++ 构建工具与 Windows SDK。
 
 ```powershell
 dotnet build ClashRouteCraft.slnx -c Release
 dotnet run --project src/ClashRouteCraft.Desktop -c Release
-```
-
-上面的命令用于开发检查。日常使用和编译交付以 Windows x64 Native AOT 为主，需要安装 Visual Studio C++ 构建工具和 Windows SDK：
-
-```powershell
 dotnet publish src/ClashRouteCraft.Desktop -c Release -r win-x64 --self-contained true -p:PublishAot=true -o artifacts/publish/win-x64-aot
 ```
 
-运行 `artifacts/publish/win-x64-aot/ClashRouteCraft.exe`。更新前关闭该目录的应用；自动更新编译产物时，应先在临时目录完成编译和验证，再仅替换程序文件，保留工作区数据。AOT 编译本身不生成 ZIP，也不需要运行打包脚本。
-
-开发过程中产生的工作区、构建目录和日志不应提交。用户数据位于所选工作区；发布版可以在独立目录中使用。
-
-## 测试
-
-.NET 测试采用可执行测试程序：
-
-```powershell
-dotnet run --project tests/ClashRouteCraft.Tests -c Release
-dotnet run --project tests/ClashRouteCraft.UiTests -c Release -- artifacts/ui
+```text
+src/                       核心库与桌面应用
+tests/                     回归测试与虚构夹具
+scripts/                   构建、打包与独立工具
+tools/python-reference/    历史 Python 参考实现
+docs/                      使用指南、验证说明与界面截图
 ```
 
-`tools/python-reference/` 保留 Python 参考生成器和回归测试，供行为对照使用；桌面应用的实现位于 `src/`。
+测试命令、真实内核检查和历史 Python 对照的已知差异见 [验证说明](docs/validation.md)。截图来源和复现命令见 [截图说明](docs/screenshots/README.md)。
 
-```powershell
-python -m pip install -r tools/python-reference/requirements.txt
-python -m unittest discover -s tools/python-reference/tests -p "test_*.py"
-python scripts/check-parity.py
-```
-
-实际内核运行测试需要单独下载 Mihomo。Python 优先级测试可用环境变量 `MIHOMO_PATH` 指定内核路径；缺少内核时该测试会跳过。其余内核验证脚本参见 [验证说明](docs/validation.md)。
-
-## 发布
-
-以下步骤仅在明确需要分发包时手动执行；日常 AOT 编译不执行这些打包步骤。先按上文生成 AOT，再在仓库根目录执行：
+仅在需要分发包时执行以下命令；日常 AOT 编译不打包 ZIP。打包只产生一个 Windows x64 版本，并排除工作区数据。
 
 ```powershell
 pwsh -File scripts/Prepare-Notices.ps1
 pwsh -File scripts/Package.ps1
+python scripts/check-release.py
 ```
 
-打包产物位于 `releases/`，打包脚本通过文件清单排除用户数据。已有安装目录更新前需要关闭对应应用。仅生成 `ClashRouteCraft-win-x64/`、对应 ZIP 和 `release-manifest.json`，不再生成 `full` 版本。
+## 文档与许可证
 
-## 许可证
+[使用指南](docs/usage.md) · [ASN 安装指南](docs/router-asn.md) · [验证说明](docs/validation.md) · [反馈问题](https://github.com/QingC2206/app-clash-route-craft/issues)
 
-源码采用 [MIT License](LICENSE)。第三方组件各自遵循其许可证，参见 [第三方说明](THIRD-PARTY-NOTICES.md)。
+源码采用 [MIT License](LICENSE)。第三方组件遵循各自许可证，见 [第三方说明](THIRD-PARTY-NOTICES.md)。
