@@ -44,6 +44,8 @@ C# 回归和 AOT 自检同时检查内置工具资源的导出：MC2 / Clash 生
 
 安装工具另有认证顺序与登录文件回归：认证失败不下载、下载失败关闭连接、BOM / Unicode 登录文件、密码不回显、命令行覆盖、已安装依赖直接复用，以及 BusyBox 命令入口存在但 applet 不可用时回退至 OpenSSL。生成会保留用户已填写的 `router-login.json`。
 
+SSH 主机记录回归使用回环服务器验证：系统与旧版共享记录不干扰项目、两个项目可为同一地址保存不同密钥、同一项目密钥变化在密码认证前拒绝且不覆盖原记录。默认记录位于脚本目录，与终端工作目录无关；重新生成保留登录文件及项目主机记录。
+
 ```sh
 python -m unittest discover -s tests -p test_router_asn_installer.py -v
 ```

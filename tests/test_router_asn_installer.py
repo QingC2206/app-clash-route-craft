@@ -249,6 +249,7 @@ class LoginFlowTests(unittest.TestCase):
         events=[]; client=MagicMock()
         def connect(_module,args,password):
             self.assertEqual((args.host,args.port,args.user,password),("127.0.0.1",2222,"fixture-user","fixture-密码"))
+            self.assertEqual(Path(args.known_hosts), ROOT / "scripts/router-known_hosts")
             events.append("authenticate"); return client
         def database(_path): events.append("download"); return DATA
         output=io.StringIO()
@@ -409,6 +410,60 @@ class SshTests(unittest.TestCase):
         self.args.host_key_sha256 = "SHA256:wrong"
         with self.assertRaises(installer.InstallError): installer.connect(paramiko, self.args, "fixture-password")
         self.assertEqual(self.auth_attempts, [])
+
+    def save_host(self, path, key):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        hosts = paramiko.HostKeys()
+        hosts.add(f"[127.0.0.1]:{self.port}", key.get_name(), key)
+        hosts.save(str(path))
+
+    def test_system_and_legacy_shared_conflicts_do_not_override_project(self):
+        home = Path(self.temp.name)/"home"
+        wrong = paramiko.RSAKey.generate(2048)
+        system = home/".ssh/known_hosts"
+        legacy = home/".config/ClashRouteCraft/router-known_hosts"
+        for path in (system, legacy): self.save_host(path, wrong)
+        before = {p:p.read_bytes() for p in (system, legacy)}
+        self.save_host(Path(self.args.known_hosts), self.key)
+        self.args.host_key_sha256 = None
+        with patch.object(installer.Path, "home", return_value=home):
+            client = installer.connect(paramiko, self.args, "fixture-password")
+        client.close()
+        self.assertEqual(len(self.auth_attempts), 1)
+        self.assertTrue(all(p.read_bytes()==data for p,data in before.items()))
+
+    def test_two_projects_keep_different_keys_for_the_same_address(self):
+        project_a = Path(self.temp.name)/"project-a/router-asn/router-known_hosts"
+        project_b = Path(self.temp.name)/"project-b/router-asn/router-known_hosts"
+        self.save_host(project_a, paramiko.RSAKey.generate(2048))
+        before = project_a.read_bytes()
+        self.args.known_hosts = str(project_b)
+        client = installer.connect(paramiko, self.args, "fixture-password")
+        client.close()
+        self.assertEqual(project_a.read_bytes(), before)
+        self.assertEqual(paramiko.HostKeys(str(project_b))[f"[127.0.0.1]:{self.port}"][self.key.get_name()], self.key)
+        self.assertEqual(len(self.auth_attempts), 1)
+
+    def test_changed_project_key_fails_before_auth_and_preserves_record(self):
+        path = Path(self.args.known_hosts)
+        self.save_host(path, paramiko.RSAKey.generate(2048))
+        before = path.read_bytes()
+        self.args.host_key_sha256 = None
+        with self.assertRaisesRegex(installer.InstallError, "host key changed for this project") as error:
+            installer.connect(paramiko, self.args, "fixture-password")
+        self.assertIn(str(path), str(error.exception))
+        self.assertEqual(self.auth_attempts, [])
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_exported_default_record_path_is_beside_script_not_working_directory(self):
+        folder = Path(self.temp.name)/"exported/router-asn"
+        folder.mkdir(parents=True)
+        script = folder/"install-router-asn.py"
+        shutil.copy2(ROOT/"scripts/install-router-asn.py", script)
+        probe = "import runpy,sys; print(runpy.run_path(sys.argv[1])['KNOWN_HOSTS_FILE'])"
+        result = subprocess.run([sys.executable,"-c",probe,str(script)],cwd=ROOT,capture_output=True,text=True,timeout=20)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(Path(result.stdout.strip()), folder/"router-known_hosts")
 
 
 class LauncherTests(unittest.TestCase):

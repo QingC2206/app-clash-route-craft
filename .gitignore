@@ -8,6 +8,8 @@ subscrip/
 .project-trash/
 .subscription-state.json
 router-login.json
+router-known_hosts
+router-known_hosts.*
 .env
 .env.*
 *.log

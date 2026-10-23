@@ -55,7 +55,11 @@ sh ./install-router-asn.sh --host 192.168.50.1 --user admin \
 
 ## SSH 身份确认与参数
 
-脚本读取 `~/.ssh/known_hosts`，并维护自己的 `~/.config/ClashRouteCraft/router-known_hosts`。第一次连接未知设备时会显示 SSH 主机 SHA-256 指纹，需要核对并输入 `yes`；以后同一设备可直接自动执行。已知主机密钥变化时会拒绝连接，不会关闭主机校验。
+脚本默认只使用**脚本所在目录**的 `router-known_hosts`，不读取 `~/.ssh/known_hosts` 或旧版共享的 `~/.config/ClashRouteCraft/router-known_hosts`。因此不同项目即使连接相同的内网地址，也各自保存设备身份；从其他终端目录启动不会改变默认记录位置。可用 `-KnownHosts` / `--known-hosts` 指定另一份独立记录，该模式同样不读取系统记录。
+
+第一次连接未知设备时会显示 SSH 主机 SHA-256 指纹，需要核对并输入 `yes`；以后同一项目连接同一设备无需再次确认。**同一项目的已知主机密钥变化仍会在发送密码前拒绝连接**，不自动覆盖旧记录，错误会指出记录文件位置。
+
+旧版共享记录不自动迁移，因为无法仅凭相同 IP 判断它属于哪台路由器；更新后首次连接需重新核对一次。旧记录和账户密码文件不会被删除或修改。重新生成只更新工具文件，保留本项目的 `router-login.json` 和 `router-known_hosts`。创建另一台路由器的项目时，不要复制旧设备的 `router-known_hosts`；如确实换机或刷机，应先核实新设备身份，再备份并移除该项目记录中的对应地址，重新确认指纹。无需清理系统 SSH 记录。
 
 无人值守的首次连接应传入从可信渠道取得的指纹：PowerShell `-HostKeySha256 'SHA256:...'` / POSIX `--host-key-sha256 'SHA256:...'`。未知主机且未提供可信指纹时，非交互运行直接失败。指纹在发送密码前检查。
 
@@ -67,7 +71,7 @@ sh ./install-router-asn.sh --host 192.168.50.1 --user admin \
 | `-LoginFile` | `--login-file` | 自定义登录 JSON；默认读取脚本同目录的 `router-login.json` |
 | `-DataDirectory` | `--data-dir` | 内核实际工作目录 |
 | `-CorePath` | `--core` | Mihomo 可执行文件 |
-| `-KnownHosts` | `--known-hosts` | 脚本自己的主机密钥记录文件 |
+| `-KnownHosts` | `--known-hosts` | 独立主机密钥记录文件；默认是脚本同目录的 `router-known_hosts` |
 | `-HostKeySha256` | `--host-key-sha256` | 可选的可信 SSH 指纹 |
 
 ## 自动执行的步骤

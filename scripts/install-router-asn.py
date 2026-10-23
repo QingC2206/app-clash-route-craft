@@ -21,6 +21,7 @@ RELEASE = "https://api.github.com/repos/MetaCubeX/meta-rules-dat/releases/latest
 ASSET = "GeoLite2-ASN.mmdb"
 LIMIT = 64 * 1024 * 1024
 LOGIN_FILE = Path(__file__).resolve().with_name("router-login.json")
+KNOWN_HOSTS_FILE = Path(__file__).resolve().with_name("router-known_hosts")
 q = shlex.quote
 
 
@@ -333,9 +334,8 @@ def install(remote, data, data_dir="/koolshare/merlinclash", core="/koolshare/bi
 def connect(paramiko, args, password):
     client = paramiko.SSHClient()
     known = Path(args.known_hosts).expanduser()
-    system = Path.home() / ".ssh/known_hosts"
-    if system.is_file():
-        client.load_system_host_keys(str(system))
+    # A project identifies its own router, even when other projects use the same IP.
+    # Never mix this trust store with system or legacy shared host records.
     if known.is_file():
         client.load_host_keys(str(known))
 
@@ -373,6 +373,9 @@ def connect(paramiko, args, password):
                        banner_timeout=20, auth_timeout=20, allow_agent=False, look_for_keys=False,
                        transport_factory=PinnedTransport)
         return client
+    except paramiko.BadHostKeyException:
+        client.close()
+        raise InstallError(f"SSH host key changed for this project; connection refused before password authentication. Record: {known}. Verify the router identity before updating this record; no records were overwritten.") from None
     except paramiko.AuthenticationException:
         client.close()
         raise InstallError("SSH authentication failed. Check the router username/password (including router-login.json) and whether SSH password login is enabled. ASN download has not started.") from None
@@ -390,7 +393,7 @@ def main():
     parser.add_argument("--asn-file", help="Use a local ASN.mmdb instead of downloading")
     parser.add_argument("--password-stdin", action="store_true", help="Read one password line from stdin, never command arguments")
     parser.add_argument("--host-key-sha256", help="Trusted SSH host fingerprint for unattended first use")
-    parser.add_argument("--known-hosts", default=str(Path.home() / ".config/ClashRouteCraft/router-known_hosts"))
+    parser.add_argument("--known-hosts", default=str(KNOWN_HOSTS_FILE), help="Project SSH host records; defaults to router-known_hosts beside this script (no system/shared records)")
     parser.add_argument("--data-dir", default="/koolshare/merlinclash")
     parser.add_argument("--core", default="/koolshare/bin/clash")
     parser.add_argument("--plain", action="store_true", help="Disable emoji and terminal colors; retain [OK]/[FAIL] labels")
