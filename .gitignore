@@ -7,6 +7,7 @@ subscrip/
 .cache/
 .project-trash/
 .subscription-state.json
+router-login.json
 .env
 .env.*
 *.log

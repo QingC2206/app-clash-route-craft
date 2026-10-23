@@ -215,7 +215,7 @@ public sealed partial class MainWindow
         var useSubscription = Check("使用第一个启用订阅的规则（推荐）", baseline, value => { Mutate("policy.yaml", doc => doc["rule_source"] = value ? "subscription" : "custom"); RenderPage(); }); useSubscription.Name = "UseSubscriptionBaseline";
         var ordered = (JsonObject)session!.Settings.DeepClone(); ProjectOrdering.NumberSources(ordered);
         string source = SubscriptionBaseline.Primary(ordered) is { } primary ? S(primary, "name") : "尚未启用订阅";
-        return Stack(Card("规则来源", useSubscription, Label(baseline ? $"当前来源：{source}。使用该订阅的匹配条件和顺序，动作归并为三类；其他订阅只提供节点。自定义规则优先于订阅规则，无需再次导入规则集。" : "当前使用旧的自定义编排。勾选上方即可切换到订阅基线；保留现有配置内容，保存并重新生成后生效。", true, 13)), policyTab == "sets" ? RuleSetsForm() : RuleForms());
+        return Stack(Card("规则来源", useSubscription, Label(baseline ? $"当前来源：{source}。使用该订阅的匹配条件和顺序，动作归并为三类；其他订阅只提供节点。自定义规则优先于订阅规则，无需再次导入规则集。" : "当前使用旧的自定义编排。勾选上方即可切换到订阅基线；保留现有配置内容，保存并重新生成后生效。", true, 13)), AsnPolicyCard(), policyTab == "sets" ? RuleSetsForm() : RuleForms());
     }
     Control UnifiedRoutingOverview()
     {

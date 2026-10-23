@@ -17,4 +17,6 @@ Starting with 1.12.0, distribution ZIPs do not contain Mihomo, GeoData or an MC2
 
 Factory templates are embedded and contain no provider subscription rules or credentials. Personal configuration, subscription snapshots, generated outputs, caches, downloaded resources and local logs are excluded from distribution ZIPs.
 
+The optional router ASN installer uses Paramiko (>=3.5, <5; LGPL-2.1) and its Python dependencies, installed separately from PyPI in a tool-specific virtual environment when needed. It does not bundle these packages into the desktop executable. It downloads `GeoLite2-ASN.mmdb` from MetaCubeX/meta-rules-dat releases, subject to the upstream database notices and licenses. No router credentials or database binaries are included in the source repository.
+
 The optional MC2 DNS recovery template reproduces the configuration values in `merlinclash/yaml_dns/fakeip.yaml` from `MC2_1.2.2_ARM64.tar.gz`. Original file SHA-256: `22c47f81d7f55960bc9400f58ab1c9a4741bc14d2aaadd743b633c2e727c3577`. Only this small configuration template is embedded; no MC2 installer, executable, domain database or provider subscription is bundled. Its existing `geosite:gfw` reference uses the database already supplied with MC2. The template is version-specific and is not a full router backup.

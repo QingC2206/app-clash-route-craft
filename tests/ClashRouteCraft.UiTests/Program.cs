@@ -481,7 +481,7 @@ try
     Check(NamedButton("NewProject").TranslatePoint(default, window)!.Value.Y >= NamedControl("CurrentProject").TranslatePoint(default, window)!.Value.Y + NamedControl("CurrentProject").Bounds.Height && NamedButton("DeleteProject").IsEnabled, "Project actions are not below the selector");
     ClickNamed("Nav_dns"); Check(Equals(Flow("dns").Tag, "selected") && Equals(NamedButton("Nav_dns").Tag, "selected"), "DNS sidebar selection is not linked to the graph");
     var dnsOutput = window.GetVisualDescendants().OfType<AvaloniaEdit.TextEditor>().Single(x => x.Name == "DnsOutput");
-    Check(window.GetVisualDescendants().OfType<TextBlock>().Any(x => x.Text?.Contains("GeoSite.dat") == true && x.Text.Contains("不代表路由器")), "DNS output hides client GEO dependencies");
+    Check(window.GetVisualDescendants().OfType<TextBlock>().Any(x => x.Text?.Contains("GeoSite.dat") == true && x.Text.Contains("不代表目标设备")), "DNS output hides client GEO dependencies");
     Check(dnsOutput.IsReadOnly && dnsOutput.Text == File.ReadAllText(Path.Combine(fixture.OutputPath, "HomeChain.MC2DNS.yaml")) && dnsOutput.VerticalScrollBarVisibility == Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled, "DNS output is not the complete read-only file");
     Check(!dnsOutput.GetVisualAncestors().OfType<Expander>().Any(), "Generated DNS output is still collapsed");
     AvaloniaHeadlessPlatform.ForceRenderTimerTick(2); using(var dnsFrame = window.CaptureRenderedFrame()) dnsFrame!.Save(Path.Combine(output, "dns-output.png"));
@@ -744,6 +744,7 @@ try
     Check(Dialog("通知记录").GetVisualDescendants().OfType<TextBlock>().Any(x => x.Text == "请先填写至少一个 URL。"), "Expired notification is not available in shared history"); Dialog("通知记录").Close(); Pump();
     window.Close(); Dispatcher.UIThread.RunJobs(); Check(!window.IsVisible, "Clean window did not close on the first attempt");
     FunctionalUiRegression.Run(workspace, output, Check);
+    AsnUiRegression.Run(workspace, output, Check);
     Console.WriteLine($"RESULT {checks} UI checks passed; screenshots: {output}");
 }
 

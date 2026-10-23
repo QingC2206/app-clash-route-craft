@@ -2,4 +2,9 @@
   <PropertyGroup><IsAotCompatible>true</IsAotCompatible></PropertyGroup>
   <ItemGroup><PackageReference Include="YamlDotNet" Version="18.1.0" /></ItemGroup>
   <ItemGroup><EmbeddedResource Include="Resources/Defaults/*.yaml" LogicalName="ClashRouteCraft.Defaults.%(Filename)%(Extension)" /></ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../../scripts/Install-RouterAsn.ps1;../../scripts/install-router-asn.py;../../scripts/install-router-asn.sh" LogicalName="ClashRouteCraft.RouterAsn.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../docs/router-asn.md" LogicalName="ClashRouteCraft.RouterAsn.README.md" />
+    <EmbeddedResource Include="../../scripts/router-login.example.json" LogicalName="ClashRouteCraft.RouterAsn.router-login.example.json" />
+  </ItemGroup>
 </Project>

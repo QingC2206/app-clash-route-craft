@@ -18,11 +18,11 @@ public static class CoreValidation
             File.Exists(Path.Combine(bundled, "validation", "mihomo.exe")) || !File.Exists(Path.Combine(app, "validation", "mihomo.exe")) ? Path.Combine(bundled, "validation", "mihomo.exe") : Path.Combine(app, "validation", "mihomo.exe"),
             Directory.Exists(Path.Combine(bundled, "geodata")) || !Directory.Exists(Path.Combine(app, "geodata")) ? Path.Combine(bundled, "geodata") : Path.Combine(app, "geodata"), "");
     }
-    public static async Task ValidateAsync(JsonObject configuration, string executable, string dataDirectory, string logPath, CancellationToken cancellation = default)
+    public static async Task ValidateAsync(JsonObject configuration, string executable, string dataDirectory, string logPath, CancellationToken cancellation = default, IReadOnlyCollection<string>? declaredData = null)
     {
-        Directory.CreateDirectory(dataDirectory);
-        string pending = Path.Combine(dataDirectory, "config-" + Guid.NewGuid().ToString("N") + ".yaml");
-        await File.WriteAllBytesAsync(pending, YamlData.Bytes(configuration), cancellation);
+        string isolated = Path.Combine(Path.GetTempPath(), "clashroutecraft-core-check-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(isolated);
+        string pending = Path.Combine(isolated, "config.yaml");
         using var process = new Process
         {
             StartInfo = new ProcessStartInfo(Path.GetFullPath(executable))
@@ -31,10 +31,23 @@ public static class CoreValidation
                 StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8
             }
         };
-        foreach (string arg in new[] { "-t", "-d", Path.GetFullPath(dataDirectory), "-f", pending }) process.StartInfo.ArgumentList.Add(arg);
+        foreach (string arg in new[] { "-t", "-d", isolated, "-f", pending }) process.StartInfo.ArgumentList.Add(arg);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation); timeout.CancelAfter(TimeSpan.FromSeconds(90));
         try
         {
+            var files = GeoRules.RequiredDatabases(configuration).Concat(declaredData ?? []).Distinct().ToArray();
+            foreach (string file in files)
+            {
+                FileName(file, "校验数据库"); string source = Path.Combine(dataDirectory, file);
+                if (!File.Exists(source)) throw new BuildException($"本机内核校验缺少 {file}；不会借用旧缓存或自动下载数据库，旧输出已保留。");
+                File.Copy(source, Path.Combine(isolated, file));
+            }
+            var test = (JsonObject)configuration.DeepClone();
+            // Invalid databases must fail here, not be silently replaced online.
+            // These validation-only URLs are never written to the delivered YAML.
+            test["geox-url"] = O("geoip", "http://127.0.0.1:0/disabled", "geosite", "http://127.0.0.1:0/disabled", "mmdb", "http://127.0.0.1:0/disabled", "asn", "http://127.0.0.1:0/disabled");
+            test["geo-auto-update"] = false;
+            await File.WriteAllBytesAsync(pending, YamlData.Bytes(test), cancellation);
             if (!process.Start()) throw new BuildException("Mihomo 校验程序未能启动");
             var stdout = process.StandardOutput.ReadToEndAsync(timeout.Token); var stderr = process.StandardError.ReadToEndAsync(timeout.Token);
             await process.WaitForExitAsync(timeout.Token);
@@ -49,9 +62,9 @@ public static class CoreValidation
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or IOException or UnauthorizedAccessException)
         { throw new BuildException("Mihomo 校验未完成，请检查可执行文件与目录权限"); }
-        finally { if (File.Exists(pending)) File.Delete(pending); }
+        finally { if (Directory.Exists(isolated)) Directory.Delete(isolated, true); }
     }
-    public static async Task<JsonObject> ValidatePackageAsync(JsonObject configuration, JsonObject? dns, string executable, string package, string logPath, CancellationToken cancellation = default, string? nativeDataDirectory = null)
+    public static async Task<JsonObject> ValidatePackageAsync(JsonObject configuration, JsonObject? dns, string executable, string package, string logPath, CancellationToken cancellation = default, string? nativeDataDirectory = null, IReadOnlyCollection<string>? declaredData = null)
     {
         string directory = Path.Combine(Path.GetTempPath(), "homechain-mc2-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory);
         try
@@ -65,7 +78,7 @@ public static class CoreValidation
                 while ((entry = await reader.GetNextEntryAsync(false, cancellation)) is not null)
                 {
                     string name = entry.Name.TrimStart('.', '/');
-                    if (name is not "merlinclash/clash/GeoIP.dat" and not "merlinclash/clash/GeoSite.dat" and not "merlinclash/yaml_basic/head.yaml" and not "merlinclash/yaml_dns/fakeip.yaml" and not "merlinclash/yaml_dns/redirhost.yaml") continue;
+                    if (name is not "merlinclash/clash/GeoIP.dat" and not "merlinclash/clash/GeoSite.dat" and not "merlinclash/yaml_basic/head.yaml" and not "merlinclash/yaml_basic/hosts.yaml" and not "merlinclash/yaml_dns/fakeip.yaml" and not "merlinclash/yaml_dns/redirhost.yaml") continue;
                     if (entry.DataStream is null || entry.Length > 64 * 1024 * 1024) throw new BuildException("MC2 安装包文件无效或过大");
                     using var data = new MemoryStream(); await entry.DataStream.CopyToAsync(data, cancellation); content[name] = data.ToArray();
                 }
@@ -79,11 +92,12 @@ public static class CoreValidation
             }
             if (!content.TryGetValue("merlinclash/yaml_basic/head.yaml", out var header)) throw new BuildException("MC2 安装包缺少 head.yaml");
             var merged = Map(YamlData.Parse(header), "MC2 head");
-            foreach (string key in new[] { "proxies", "proxy-providers", "proxy-groups", "rule-providers", "rules", "sub-rules", "hosts" }) if (configuration.ContainsKey(key)) merged[key] = configuration[key]?.DeepClone();
+            foreach (string key in new[] { "proxies", "proxy-providers", "proxy-groups", "rule-providers", "rules", "sub-rules" }) if (configuration.ContainsKey(key)) merged[key] = configuration[key]?.DeepClone();
+            if (content.TryGetValue("merlinclash/yaml_basic/hosts.yaml", out var hosts)) merged = Merge(merged, Map(YamlData.Parse(hosts), "MC2 Hosts"));
             if (dns is not null) merged = Merge(merged, dns);
             var requiredAssets = new JsonObject();
             if (nativeDataDirectory is not null)
-                foreach (string name in GeoRules.RequiredDatabases(merged))
+                foreach (string name in GeoRules.RequiredDatabases(merged).Concat(declaredData ?? []).Distinct())
                 {
                     string source = Path.Combine(nativeDataDirectory, name);
                     if (!File.Exists(source)) throw new BuildException($"原生 GEO 的 MC2 校验需要 {name}；请补齐校验数据库，不会自动改为内嵌名单。");
@@ -97,11 +111,11 @@ public static class CoreValidation
                 foreach (string mode in new[] { "fakeip", "redirhost" })
                 {
                     if (!content.TryGetValue($"merlinclash/yaml_dns/{mode}.yaml", out var template)) throw new BuildException("MC2 安装包缺少默认 DNS 模板：" + mode);
-                    await ValidateAsync(Merge(merged, Map(YamlData.Parse(template), "MC2 默认 DNS")), executable, directory, logPath + "." + mode, cancellation);
+                    await ValidateAsync(Merge(merged, Map(YamlData.Parse(template), "MC2 默认 DNS")), executable, directory, logPath + "." + mode, cancellation, declaredData);
                     dnsModes.Push(mode);
                 }
             }
-            else await ValidateAsync(merged, executable, directory, logPath, cancellation);
+            else await ValidateAsync(merged, executable, directory, logPath, cancellation, declaredData);
             var downloaded = Directory.GetFiles(directory).Select(Path.GetFileName).Where(x => x is not null && !assets.ContainsKey(x) && !requiredAssets.ContainsKey(x)).ToArray();
             if (downloaded.Length > 0) throw new BuildException("MC2 校验触发未声明的数据库下载，请补齐数据库依赖；旧输出已保留");
             bool external = requiredAssets.Count > 0;

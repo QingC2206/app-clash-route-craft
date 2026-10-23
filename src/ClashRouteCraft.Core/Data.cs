@@ -7,12 +7,12 @@ using System.Text.RegularExpressions;
 
 namespace ClashRouteCraft.Core;
 
-public sealed class BuildException(string message) : Exception(message);
+public class BuildException(string message) : Exception(message);
 public record BuildProgress(string Stage, string Message, int Completed = 0, int Total = 6, string State = "pending");
 public record BuildResult(string OutputPath, JsonObject Report);
 public record CompiledProfile(JsonObject Configuration, JsonObject Report);
 public record ValidationPaths(string Mihomo, string DataDirectory, string Mc2Package);
-public record BuildOptions(bool Force = false, bool Offline = false, ValidationPaths? Validation = null, bool RefreshRules = false, bool AutoFetch = true);
+public record BuildOptions(bool Force = false, bool Offline = false, ValidationPaths? Validation = null, bool RefreshRules = false, bool AutoFetch = true, bool InspectAsnOnly = false);
 
 public static class Data
 {

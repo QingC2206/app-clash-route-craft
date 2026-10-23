@@ -48,7 +48,7 @@ public sealed class BuildEngine
             var subscriptionState = SubscriptionState.Load(project, rawSettings);
             settings["_input_fingerprint"] = initialFingerprint;
             var currentSession = new WorkspaceSession(workspace, projectName);
-            var failures = ParameterInspection.Inspect(currentSession, cancellation, options).Where(x => x.State == "fail").ToArray();
+            var failures = ParameterInspection.Inspect(currentSession, cancellation, options, checkDependencies: !options.InspectAsnOnly).Where(x => x.State == "fail").ToArray();
             if (failures.Length > 0) throw new BuildException(string.Join("；", failures.Select(x => x.Title + "：" + x.Message)));
             M(settings, "http")["prefer_cache"] = !options.RefreshRules;
             var fetchOptions = Merge(M(settings, "http"), O("cache_dir", Path.Combine(temporary, "cache"), "allow_stale", false, "prefer_cache", false, "strict_subscriptions", true));
@@ -92,11 +92,11 @@ public sealed class BuildEngine
             }
             settings["_subscription_fetches"] = A(fetch.Events.Concat(snapshots).Select(x => x?.DeepClone()));
             if (extra.Count > 0 || subscriptionState.Text != subscriptionState.Baseline) extra.Add((Path.Combine(project, SubscriptionState.FileName), subscriptionState.Bytes));
-            return await GenerateAsync(Path.Combine(project, "settings.yaml"), Path.Combine(workspace, "output", projectName, "HomeChain.yaml"), settings, extra, options.Offline, progress, cancellation);
+            return await GenerateAsync(Path.Combine(project, "settings.yaml"), Path.Combine(workspace, "output", projectName, "HomeChain.yaml"), settings, extra, options.Offline, progress, cancellation, options.InspectAsnOnly);
         }
         finally { if (Directory.Exists(temporary)) Directory.Delete(temporary, true); gate.Release(); }
     }
-    public async Task<BuildResult> GenerateAsync(string settingsPath, string? output = null, JsonObject? settingsOverride = null, IReadOnlyList<(string Path, byte[] Bytes)>? extraOutputs = null, bool offline = false, IProgress<BuildProgress>? progress = null, CancellationToken cancellation = default)
+    public async Task<BuildResult> GenerateAsync(string settingsPath, string? output = null, JsonObject? settingsOverride = null, IReadOnlyList<(string Path, byte[] Bytes)>? extraOutputs = null, bool offline = false, IProgress<BuildProgress>? progress = null, CancellationToken cancellation = default, bool inspectAsnOnly = false)
     {
         settingsPath = Path.GetFullPath(settingsPath); string root = Path.GetDirectoryName(settingsPath)!;
         var settings = settingsOverride ?? Map(YamlData.Read(settingsPath), "settings");
@@ -105,9 +105,18 @@ public sealed class BuildEngine
         var compiled = await ProfileCompiler.CompileAsync(settings, root, offline, cancellation);
         var configuration = compiled.Configuration; var report = compiled.Report;
         string buildTarget = ConfigurationValidation.Target(settings); report["target"] = buildTarget;
+        var asn = M(report, "asn");
+        if (inspectAsnOnly) return new("", report);
+        AsnPolicy.Enforce(asn);
+        var targetConfig = (JsonObject)configuration.DeepClone();
+        if (buildTarget == "mc2") targetConfig["geodata-mode"] = true;
+        report["target_dependencies"] = O("status", S(asn, "status"), "databases", GeoRules.RequiredDatabases(targetConfig),
+            "potential_databases", I(asn, "uninspected_providers", 0) > 0 ? A("ASN.mmdb") : A(),
+            "uninspected_providers", I(asn, "uninspected_providers", 0), "router_runtime_tested", false,
+            "scope", "静态依赖检查；本机内核校验不验证目标设备是否已安装数据库");
         report["dns_artifacts_version"] = DnsPrivacy.ArtifactVersion;
         report["dependency_version"] = DependencySnapshot.Version;
-        var validationInputs = DependencySnapshot.Validation(settings, root, configuration);
+        var validationInputs = DependencySnapshot.Validation(settings, root, configuration, asn);
         report["validation_inputs"] = validationInputs.DeepClone();
         report["project_ordering_version"] = I(settings, "_project_ordering_version", 0);
         report["input_fingerprint"] = InputFingerprint.Compute(root, extraOutputs);
@@ -140,26 +149,25 @@ public sealed class BuildEngine
         else
         {
             string cache = Path.GetFullPath(S(M(settings, "http"), "cache_dir", Path.Combine(root, ".cache")), root);
-            string dataDirectory = Path.Combine(cache, "core-data");
-            string[] requiredData = GeoRules.RequiredDatabases(configuration);
+            string[] requiredData = AsnPolicy.ValidationFiles(configuration, asn);
             string source = S(validation, "data_dir");
+            string dataDirectory = source.Length > 0 ? Path.GetFullPath(source, root) : Path.Combine(cache, "core-data-unconfigured");
             foreach (string file in requiredData)
                 if (source.Length == 0 || !File.Exists(Path.Combine(Path.GetFullPath(source, root), file))) throw new BuildException($"内核校验缺少 {file}，请补齐校验数据库；客户端使用原生 GEO 也需要对应数据库。");
-            if (requiredData.Length > 0) CoreValidation.CopyGeoData(Path.GetFullPath(source, root), dataDirectory, requiredData);
             progress?.Report(new("主配置校验", "使用 Mihomo 检查生成配置", 3));
-            await CoreValidation.ValidateAsync(configuration, exe, dataDirectory, Path.Combine(cache, "core-check.log"), cancellation); report["core_validation"] = "passed";
+            await CoreValidation.ValidateAsync(configuration, exe, dataDirectory, Path.Combine(cache, "core-check.log"), cancellation, requiredData); report["core_validation"] = "passed";
             if (buildTarget == "mc2") progress?.Report(new("DNS 兼容性", dns is null ? "DNS 由 MC2 管理，本次不生成或覆盖 DNS" : "检查主配置与 MC2 DNS 的组合配置", 4));
             if (dns is not null)
             {
-                await CoreValidation.ValidateAsync(Merge(configuration, dns), exe, dataDirectory, Path.Combine(cache, "mc2-dns-check.log"), cancellation);
+                await CoreValidation.ValidateAsync(Merge(configuration, dns), exe, dataDirectory, Path.Combine(cache, "mc2-dns-check.log"), cancellation, requiredData);
                 M(report, "dns")["mc2_core_validation"] = "passed";
             }
             if (buildTarget == "mc2" && S(validation, "mc2_package") is { Length: > 0 } package)
-                report["mc2_package_validation"] = await CoreValidation.ValidatePackageAsync(configuration, dns, exe, Path.GetFullPath(package, root), Path.Combine(cache, "mc2-package-check.log"), cancellation, S(report, "geo_mode") == "native" ? dataDirectory : null);
+                report["mc2_package_validation"] = await CoreValidation.ValidatePackageAsync(configuration, dns, exe, Path.GetFullPath(package, root), Path.Combine(cache, "mc2-package-check.log"), cancellation, S(report, "geo_mode") == "native" || B(asn, "allow_native") ? dataDirectory : null, requiredData.Where(x => x == "ASN.mmdb").ToArray());
         }
         cancellation.ThrowIfCancellationRequested(); progress?.Report(new("提交输出", "校验结束，统一替换本项目文件", 5));
         if (InputFingerprint.Compute(root) != initialFingerprint) throw new BuildException("生成期间输入配置或快照已被修改，本次结果未提交，请重新生成");
-        if (Canonical(validationInputs) != Canonical(DependencySnapshot.Validation(settings, root, configuration)) || !DependencySnapshot.RuleCachesCurrent(root, report, Path.GetFullPath(S(M(settings, "http"), "cache_dir", Path.Combine(root, ".cache")), root))) throw new BuildException("生成期间名单或校验资源已改变，本次结果未提交，请重试");
+        if (Canonical(validationInputs) != Canonical(DependencySnapshot.Validation(settings, root, configuration, asn)) || !DependencySnapshot.RuleCachesCurrent(root, report, Path.GetFullPath(S(M(settings, "http"), "cache_dir", Path.Combine(root, ".cache")), root))) throw new BuildException("生成期间名单或校验资源已改变，本次结果未提交，请重试");
         foreach (var raw in L(report, "fetches"))
         {
             var fetched = Map(raw, "名单读取");
@@ -169,12 +177,16 @@ public sealed class BuildEngine
         if (dnsBlob is not null) outputs.Add((dnsTarget!, dnsBlob));
         if (defaultDns is not null) outputs.Add((stem + DnsPrivacy.DefaultSuffix, defaultDns));
         if (dnsGuide is not null) outputs.Add((stem + DnsPrivacy.GuideSuffix, dnsGuide));
+        var tools = RouterAsnTools.Outputs(Path.GetDirectoryName(target)!);
+        outputs.AddRange(tools);
+        report["router_asn_tools"] = O("version", RouterAsnTools.Version, "directory", RouterAsnTools.DirectoryName,
+            "files", A(tools.Select(x => (JsonNode?)O("name", Path.GetFileName(x.Path), "sha256", Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(x.Bytes))))));
         outputs.Add((stem + ".report.json", Encoding.UTF8.GetBytes(report.ToJsonString(JsonOptions) + "\n"))); outputs.Add((target, blob));
         var removals = new List<string>();
         if (dnsBlob is null) removals.Add(dnsTarget);
         if (buildTarget != "mc2") { removals.Add(stem + DnsPrivacy.DefaultSuffix); removals.Add(stem + DnsPrivacy.GuideSuffix); }
         FileBundle.Commit(outputs, cancellation, removals: removals);
-        progress?.Report(new("生成完成", $"节点 {I(report, "proxy_count", 0)}，规则 {I(report, "rule_count", 0)}", 6));
+        progress?.Report(new("生成完成", $"节点 {I(report, "proxy_count", 0)}，规则 {I(report, "rule_count", 0)}；ASN 安装工具：{RouterAsnTools.DirectoryName}/", 6));
         return new(target, report);
     }
 }

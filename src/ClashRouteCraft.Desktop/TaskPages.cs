@@ -46,6 +46,11 @@ public sealed partial class MainWindow
             logHeader.Children.Add(output); Grid.SetColumn(output, 1);
         }
         content.Children.Add(Card("", logHeader, liveLog));
+        if (session?.LastAsnAnalysis is { } asn && S(asn, "status") == "blocked")
+        {
+            var resolve = Button("处理 ASN 依赖", () => { policyTab = "rules"; Navigate("policy"); }); resolve.Name = "ResolveAsnDependencies";
+            content.Children.Add(Card("ASN 依赖需要处理", Label("旧输出已保留。请在规则页查看来源，选择排除或高级保留。"), resolve));
+        }
         return content;
     }
     void RenderTaskLog()
@@ -173,11 +178,13 @@ public sealed partial class MainWindow
                         RefreshFlow();
                     }));
                     var options = new BuildOptions(Force: refresh);
-                    await Task.Run(() => engine.BuildProjectAsync(workspace, project, options, progress, cancellation), cancellation); current++;
+                    var built = await Task.Run(() => engine.BuildProjectAsync(workspace, project, options, progress, cancellation), cancellation);
+                    session.LastAsnAnalysis = (JsonObject)M(built.Report, "asn").DeepClone(); current++;
                 }
                 await Dispatcher.UIThread.InvokeAsync(() => { }); FinishPendingLog("pass"); session.ReloadSubscriptionState(); taskStage = "生成完成"; taskMessage = "输出已保存在本地，可查看配置文件"; taskPercent = 100; SetStatus(taskMessage);
             }
             catch (OperationCanceledException) { FinishPendingLog("warning"); taskLog.Add(new("已取消", "未提交的项目保留旧输出", "warning")); taskStage = "已取消"; taskMessage = "未提交的项目保留旧输出"; SetStatus(taskMessage); }
+            catch (AsnDependencyException ex) { session.LastAsnAnalysis = ex.Analysis; lastError = SafeMessage(ex); taskStage = "ASN 依赖待处理"; taskMessage = lastError; FinishPendingLog("fail"); taskLog.Add(new("ASN 依赖待处理", lastError, "fail")); SetStatus(lastError, true); }
             catch (Exception ex) { lastError = SafeMessage(ex); taskStage = "生成失败"; taskMessage = lastError; FinishPendingLog("fail"); taskLog.Add(new("生成失败", lastError, "fail")); SetStatus(lastError, true); }
         }
     }
@@ -193,9 +200,9 @@ public sealed partial class MainWindow
         var report = session!.ReadReport();
         if (report is null) return Stack(Card("尚未生成", Label("完成基础配置后生成，即可获取主配置和 DNS 文件。"), IssuesCard(Issues())));
         string Status(JsonNode? node) => S(node) == "passed" ? "通过" : S(node) == "passed_with_geodata" ? "需配套数据库" : node is null ? "未运行" : S(node).StartsWith("not_run") ? "未运行，仅检查结构" : S(node);
-        Control badges = StatusChips("主配置：" + Status(report["core_validation"]) + (S(report, "rule_source") == "subscription" ? $" · 规则来源：{S(report, "baseline_source")}" : "")
+        Control badges = StatusChips("本机内核：" + Status(report["core_validation"]) + " · 目标 ASN：" + AsnTargetStatus(report) + (S(report, "rule_source") == "subscription" ? $" · 规则来源：{S(report, "baseline_source")}" : "")
             + (S(M(report, "dns"), "source") == "privacy" ? " · DNS：Fake-IP 隐私增强" : S(M(report, "dns"), "source") == "client" ? " · DNS：由客户端管理" : "")
-            + (S(report, "target", "mc2") == "mc2" && B(M(report, "dns"), "configured") ? " · MC2 DNS：" + Status(M(report, "dns")["mc2_core_validation"]) : ""));
+            + (S(report, "target", "mc2") == "mc2" && B(M(report, "dns"), "configured") ? " · 本机 DNS 组合：" + Status(M(report, "dns")["mc2_core_validation"]) : ""));
         string path = Path.Combine(session.OutputPath, previewFile); string text = PreviewText(path, previewSecrets); var editor = Editor(text, true);
         var outputStatus = session.OutputStatus(); bool current = outputStatus == OutputFreshness.Current;
         var copy = AsyncButton("复制主配置全文", async () => { if (Clipboard is not null && !IsBusy) { await Clipboard.SetTextAsync(session.ReadValidatedOutput("HomeChain.yaml")); SetStatus("已复制原始全文，包含真实连接参数"); } });
@@ -262,11 +269,15 @@ public sealed partial class MainWindow
     }
     static string GeoDependencyNotice(JsonObject? report)
     {
-        if (report is not null && S(report, "rule_source") == "subscription") return "\n规则及其依赖沿用主订阅；本程序不自动追加 GEO / ASN 规则。";
         if (report is null) return "";
-        if (S(report, "geo_mode", "mc2-inline") != "native") return "\n当前使用内嵌兼容名单，更新 GEO / ASN 名单需重新生成。";
-        var files = L(report, "required_geodata").Select(x => S(x)).Concat(M(M(report, "mc2_package_validation"), "required_assets").Select(x => x.Key)).Distinct().ToArray();
-        return files.Length == 0 ? "" : "\n原生 GEO / ASN：客户端需准备 " + string.Join("、", files) + "，并包含所引用的分类。MC2 请先补齐或更新数据库；本机校验通过不代表路由器已安装这些数据。";
+        var target = M(report, "target_dependencies");
+        var files = (target.ContainsKey("databases") ? L(target, "databases") : L(report, "required_geodata")).Select(x => S(x))
+            .Concat(M(M(report, "mc2_package_validation"), "required_assets").Select(x => x.Key)).Distinct().ToArray();
+        string text = files.Length == 0 ? "" : "\n规则引用数据库：" + string.Join("、", files) + "，需包含所引用的分类。";
+        var asn = M(report, "asn");
+        if (I(asn, "uninspected_providers", 0) > 0) text += "\n仍有远程规则集未检查，可能需要 ASN.mmdb；不能认定没有额外依赖。";
+        if (I(asn, "excluded_rules", 0) > 0) text += $"\n按项目选择排除了 {I(asn, "excluded_rules", 0)} 条 ASN 规则；匹配结果可能改变，详情见规则页。";
+        return text + "\n本机校验通过不代表目标设备已安装数据库或能够联网；路由器运行状态尚未验证。";
     }
     bool OutputValidated()
     {

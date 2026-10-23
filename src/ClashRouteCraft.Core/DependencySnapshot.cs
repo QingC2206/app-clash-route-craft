@@ -6,15 +6,15 @@ namespace ClashRouteCraft.Core;
 
 public static class DependencySnapshot
 {
-    public const int Version = 4;
+    public const int Version = 5;
     public static string FileHash(string path) => File.Exists(path) ? Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(path))) : "missing";
-    public static JsonObject Validation(JsonObject settings, string project, JsonObject configuration)
+    public static JsonObject Validation(JsonObject settings, string project, JsonObject configuration, JsonObject? asn = null)
     {
         var validation = M(settings, "validation"); var result = new JsonObject();
         string exe = S(validation, "mihomo");
         result["mihomo"] = exe.Length == 0 ? "not_configured" : FileHash(Path.GetFullPath(exe, project));
         string data = S(validation, "data_dir");
-        foreach (string file in GeoRules.RequiredDatabases(configuration)) result[file] = data.Length == 0 ? "not_configured" : FileHash(Path.Combine(Path.GetFullPath(data, project), file));
+        foreach (string file in AsnPolicy.ValidationFiles(configuration, asn)) result[file] = data.Length == 0 ? "not_configured" : FileHash(Path.Combine(Path.GetFullPath(data, project), file));
         if (ConfigurationValidation.Target(settings) == "mc2")
         {
             string package = S(validation, "mc2_package"); result["mc2_package"] = package.Length == 0 ? "not_configured" : FileHash(Path.GetFullPath(package, project));
@@ -26,7 +26,7 @@ public static class DependencySnapshot
         if (I(report, "dependency_version", 0) != Version) return false;
         var settings = ConfigurationValidation.EffectiveSettings(session.Settings, session.Workspace);
         string main = Path.Combine(session.OutputPath, "HomeChain.yaml");
-        return File.Exists(main) && Canonical(M(report, "validation_inputs")) == Canonical(Validation(settings, session.ProjectPath, Map(YamlData.Read(main), "生成配置")));
+        return File.Exists(main) && Canonical(M(report, "validation_inputs")) == Canonical(Validation(settings, session.ProjectPath, Map(YamlData.Read(main), "生成配置"), M(report, "asn")));
     }
     public static bool RuleCachesCurrent(string project, JsonObject report, string? cacheDirectory = null)
     {

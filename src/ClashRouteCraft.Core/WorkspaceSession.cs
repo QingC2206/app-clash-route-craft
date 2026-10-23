@@ -33,6 +33,7 @@ public sealed class WorkspaceSession
     public string OutputPath => Path.Combine(Workspace, "output", ProjectName);
     public Dictionary<string, EditableDocument> Documents { get; } = [];
     public SubscriptionState Subscriptions { get; private set; }
+    public JsonObject? LastAsnAnalysis { get; set; }
     bool pendingSourceReferences;
     public bool Dirty => Documents.Values.Any(x => x.Dirty);
     public WorkspaceSession(string workspace, string project)
@@ -56,6 +57,7 @@ public sealed class WorkspaceSession
         var source = Map(sources[index], "订阅"); string oldName = S(source, "name");
         if (sources.Where((_, i) => i != index).Any(x => S(Map(x, "订阅"), "name").Equals(newName, StringComparison.OrdinalIgnoreCase))) throw new BuildException("订阅名称不能重复");
         var policy = ProjectReferences.RewritePolicy(Policy, x => ProjectReferences.SourceReference(x, oldName, newName));
+        AsnPolicy.RenameSubscription(policy, oldName, newName);
         string policyText = YamlEditing.Apply(Documents["policy.yaml"].Text, policy);
         source["name"] = newName;
         string settingsText = YamlEditing.Apply(Documents["settings.yaml"].Text, settings);

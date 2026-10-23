@@ -541,6 +541,7 @@ await Test("Native GEO is the default and never reads configured embedding sourc
 {
     using var f = new Fixture(); var policy = Map(YamlData.Read(Path.Combine(f.Project, "policy.yaml")), "policy");
     policy["domestic_direct"] = true; policy["proxy"] = A("IP-ASN,20473,no-resolve");
+    policy["asn_policy"] = O("allow_native", true);
     policy["geosite_sources"] = O("geolocation-!cn", O("file", "missing-geosite.list"));
     policy["asn_sources"] = O("20473", O("url", "http://127.0.0.1:1/must-not-fetch")); f.Write("policy.yaml", policy);
     var built = await new BuildEngine().BuildProjectAsync(f.Root, "SampleOne", new(Offline: true));
@@ -975,6 +976,8 @@ await GroupPriorityRegression.Run(Test);
 await SubscriptionHostsRegression.Run(Test);
 await DnsPrivacyRegression.Run(Test);
 await RuleSemanticsRegression.Run(Test);
+await AsnPolicyRegression.Run(Test);
+await RouterAsnToolsRegression.Run(Test);
 Console.WriteLine($"RESULT {passed} passed, {failed} failed"); Environment.ExitCode = failed == 0 ? 0 : 1;
 
 static JsonObject MergeBridge(JsonArray input) { var (rules, report) = Rules.MergeRules(input); return O("rules", rules, "report", report); }

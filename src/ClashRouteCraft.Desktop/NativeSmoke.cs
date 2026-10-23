@@ -32,6 +32,8 @@ internal static class NativeSmoke
             var subscriptionRules = SubscriptionRuleImport.ReadAsync(session, 0, false).GetAwaiter().GetResult();
             if (L(subscriptionRules, "rules").Count != 1 || Canonical(subscriptionRules).Contains("香港-示例")) throw new BuildException("项目订阅规则导入原生自检失败");
             var built = new BuildEngine().BuildProjectAsync(workspace, "SmokeTest", new(Offline: true)).GetAwaiter().GetResult();
+            foreach (var (path, bytes) in RouterAsnTools.Outputs(Path.GetDirectoryName(built.OutputPath)!))
+                if (!File.Exists(path) || !File.ReadAllBytes(path).SequenceEqual(bytes)) throw new BuildException("ASN 工具内置资源输出自检失败");
             var nativeRules = L(Map(YamlData.Read(built.OutputPath), "native output"), "rules").Select(x => S(x)).ToArray();
             if (!nativeRules.Contains("DOMAIN,native-import.example,DIRECT") || nativeRules.Contains("MATCH,DIRECT")) throw new BuildException("规则集映射或兜底策略原生自检失败");
             if (!nativeRules.Contains(@"DOMAIN-REGEX,^api[0-9]{1,3}\.example$,REJECT")
@@ -88,11 +90,29 @@ internal static class NativeSmoke
             Task.Run(() => CheckEntranceGroups(workspace)).GetAwaiter().GetResult();
             Task.Run(() => CheckDnsPrivacy(workspace)).GetAwaiter().GetResult();
             Task.Run(() => CheckCustomGroupOrder(workspace)).GetAwaiter().GetResult();
-            File.WriteAllText(resultPath, O("ok", true, "pages", pages, "project_crud", true, "ordering", true, "custom_group_priority", true, "restore_and_subscription_identity", true, "classified_rules", true, "readonly_example", true, "rule_defaults", true, "parameter_inspection", true, "parameter_remote_urls", true, "standalone_subscription_pull", true, "forced_subscription_cache_fallback", true, "residence_proxy_probe", true, "rule_semantics", true, "rule_semantics_v2", true, "domain_list_auto_detection", true, "clash_target_and_dns_cleanup", true, "airport_entrance_groups", true, "dns_privacy", true, "dns_default_recovery", true, "dependency_fingerprint", true, "proxy_count", I(built.Report, "proxy_count", 0), "mode", "native UI initialization, isolated builds and loopback rule/subscription/proxy requests; no window shown").ToJsonString(JsonOptions));
+            Task.Run(() => CheckAsnPolicy(workspace)).GetAwaiter().GetResult();
+            File.WriteAllText(resultPath, O("ok", true, "pages", pages, "project_crud", true, "ordering", true, "custom_group_priority", true, "asn_policy", true, "restore_and_subscription_identity", true, "classified_rules", true, "readonly_example", true, "rule_defaults", true, "parameter_inspection", true, "parameter_remote_urls", true, "standalone_subscription_pull", true, "forced_subscription_cache_fallback", true, "residence_proxy_probe", true, "rule_semantics", true, "rule_semantics_v2", true, "domain_list_auto_detection", true, "clash_target_and_dns_cleanup", true, "airport_entrance_groups", true, "dns_privacy", true, "dns_default_recovery", true, "dependency_fingerprint", true, "proxy_count", I(built.Report, "proxy_count", 0), "mode", "native UI initialization, isolated builds and loopback rule/subscription/proxy requests; no window shown").ToJsonString(JsonOptions));
             return 0;
         }
         catch (Exception ex) { File.WriteAllText(resultPath, O("ok", false, "error_type", ex.GetType().Name, "error", ex is BuildException ? ex.Message : "原生界面或生成自检失败").ToJsonString(JsonOptions)); return 1; }
         finally { if (Directory.Exists(workspace)) Directory.Delete(workspace, true); }
+    }
+    static async Task CheckAsnPolicy(string workspace)
+    {
+        var session = new WorkspaceSession(workspace, "EntranceSmoke");
+        var policy = session.Policy; policy["proxy"] = A("IP-ASN,64512,no-resolve");
+        session.Documents["policy.yaml"].Set(policy); session.Save();
+        string output = Path.Combine(session.OutputPath, "HomeChain.yaml"); byte[] before = File.ReadAllBytes(output);
+        try { await new BuildEngine().BuildProjectAsync(workspace, session.ProjectName, new(Offline: true)); throw new BuildException("ASN default gate missing"); }
+        catch (AsnDependencyException ex) { if (!B(ex.Analysis, "native_required")) throw new BuildException("ASN origin detection failed"); }
+        if (!File.ReadAllBytes(output).SequenceEqual(before)) throw new BuildException("Blocked ASN build replaced output");
+        AsnPolicy.SetExcluded(policy, "manual:proxy", true); session.Documents["policy.yaml"].Set(policy); session.Save();
+        var excluded = await new BuildEngine().BuildProjectAsync(workspace, session.ProjectName, new(Offline: true));
+        if (B(M(excluded.Report, "asn"), "native_required") || I(M(excluded.Report, "asn"), "excluded_rules", 0) != 1) throw new BuildException("ASN exclusion failed");
+        AsnPolicy.SetExcluded(policy, "manual:proxy", false); M(policy, "asn_policy")["allow_native"] = true;
+        session.Documents["policy.yaml"].Set(policy); session.Save();
+        var retained = await new BuildEngine().BuildProjectAsync(workspace, session.ProjectName, new(Offline: true));
+        if (S(M(retained.Report, "target_dependencies"), "status") != "requires_target_setup") throw new BuildException("ASN target requirements missing");
     }
     static void CheckEntranceGroups(string workspace)
     {

@@ -57,6 +57,7 @@ public static class ParameterInspection
     }
     public static void ValidateRules(JsonObject policy, ISet<string>? actions = null, ISet<string>? deferredPrefixes = null)
     {
+        AsnPolicy.Validate(policy);
         bool baseline = SubscriptionBaseline.Enabled(policy);
         if (baseline && !B(policy, "extra_rules_enabled", true)) return;
         ProjectOrdering.RuleOrder(policy); if (!baseline) GeoRules.Mode(policy);

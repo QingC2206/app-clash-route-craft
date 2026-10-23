@@ -1,0 +1,2 @@
+# Keep the POSIX launcher usable after a checkout on Windows.
+scripts/install-router-asn.sh text eol=lf

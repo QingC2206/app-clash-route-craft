@@ -8,6 +8,7 @@ public static class SubscriptionBaselineCompiler
     public static async Task<CompiledProfile> CompileAsync(JsonObject settings, JsonObject policy, string policyPath, Fetcher fetch, CancellationToken cancellation)
     {
         ParameterInspection.ValidateRules(policy);
+        var asn = new AsnPolicy(policy);
         var primary = SubscriptionBaseline.Primary(settings) ?? throw new BuildException("至少启用一个订阅");
         string primaryName = Name(primary["name"], "订阅");
         var sources = L(settings, "sources").OfType<JsonObject>().Where(x => B(x, "enabled", true)).OrderBy(x => I(x, "priority", 100)).ToArray();
@@ -15,6 +16,8 @@ public static class SubscriptionBaselineCompiler
         var read = await fetch.ReadAsync(primary, Nodes.Document, primaryName);
         var original = await SubscriptionBaseline.SnapshotAsync(Map(read.Value, "订阅"), fetch, read.Base, primaryName);
         SubscriptionBaseline.RequireRules(original, primaryName);
+        int originalRuleCount = SubscriptionBaseline.RuleCount(original);
+        await asn.InspectDocumentAsync(original, AsnPolicy.SubscriptionId(primaryName), "主订阅 · " + primaryName, fetch, read.Base);
         var routing = new SubscriptionRouting(original);
         var configuration = O("mixed-port", 7890, "allow-lan", false, "mode", "rule", "log-level", "info");
         var runtime = M(settings, "runtime");
@@ -115,23 +118,27 @@ public static class SubscriptionBaselineCompiler
             return defaultProxy;
         }
         var rules = new JsonArray(); var remoteSummaries = new JsonArray();
+        void Add(string rule, string sourceId, string label)
+        {
+            if (asn.Include(sourceId, label, rule)) rules.Push(rule);
+        }
         if (B(policy, "extra_rules_enabled", true))
         {
-            foreach (var raw in L(policy, "first")) { var entry = Map(raw, "前置规则"); rules.Push(Rules.WithAction(entry["match"], Action(entry["action"]), inputFormat: "match")); }
+            foreach (var raw in L(policy, "first")) { var entry = Map(raw, "前置规则"); Add(Rules.WithAction(entry["match"], Action(entry["action"]), inputFormat: "match"), "manual:first", "手工 · 旧前置规则"); }
             foreach (string group in ProjectOrdering.RuleOrder(policy))
-                foreach (var rule in L(policy, group)) rules.Push(Rules.WithAction(rule, Action(JsonValue.Create(group switch { "direct" => "DIRECT", "reject" => "REJECT", _ => "PROXY" }))));
+                foreach (var rule in L(policy, group)) Add(Rules.WithAction(rule, Action(JsonValue.Create(group switch { "direct" => "DIRECT", "reject" => "REJECT", _ => "PROXY" }))), "manual:" + group, "手工 · " + (group switch { "direct" => "直连", "reject" => "拦截", _ => "代理" }));
             foreach (var remote in ProjectOrdering.OrderedRemotes(policy).Where(x => B(x, "enabled", true)))
             {
                 var loaded = await fetch.ReadAsync(remote, bytes => Rules.ParseRemote(bytes, remote), S(remote, "name"), Path.GetDirectoryName(policyPath));
                 var entries = List(loaded.Value, "远程附加规则"); string action = Action(remote["action"]);
-                foreach (var rule in entries) rules.Push(Rules.WithAction(rule, action, inputFormat: "rule"));
+                foreach (var rule in entries) Add(Rules.WithAction(rule, action, inputFormat: "rule"), AsnPolicy.RemoteId(remote), "附加来源 · " + S(remote, "name"));
                 remoteSummaries.Push(O("name", S(remote, "name"), "rules", entries.Count, "action", action));
             }
             foreach (var set in ImportedRuleSets.Sets(policy).OfType<JsonObject>().Where(x => B(x, "enabled", true)))
                 foreach (var entry in L(set, "rules").OfType<JsonObject>().Where(x => ImportedRuleSets.Included(set, x)))
                 {
                     if (S(entry, "match") == "MATCH") throw new BuildException("附加规则集不能使用 MATCH 覆盖整个订阅，请关闭该规则集的兜底规则");
-                    rules.Push(ImportedRuleSets.Rule(entry, Action(JsonValue.Create(ImportedRuleSets.Target(set, entry)))));
+                    Add(ImportedRuleSets.Rule(entry, Action(JsonValue.Create(ImportedRuleSets.Target(set, entry)))), "imported:" + S(set, "id"), "导入规则集 · " + S(set, "name", S(set, "id")));
                 }
             rules = ProjectOrdering.OrderCustomRules(policy, rules);
         }
@@ -145,7 +152,7 @@ public static class SubscriptionBaselineCompiler
         string dnsExit = DnsPrivacy.Apply(configuration, policy, residences.Count > 0 ? residential : "", jumpCandidates.Count > 0 ? airport : "");
         var report = O("built_at", DateTimeOffset.UtcNow.ToString("O"), "sources", summaries, "fetches", fetch.Events,
             "rule_source", "subscription", "subscription_baseline_version", SubscriptionBaseline.Version, "baseline_source", primaryName,
-            "baseline_rule_count", SubscriptionBaseline.RuleCount(original), "baseline_entry_count", originalRules.Count, "extra_rule_count", extraCount,
+            "baseline_rule_count", originalRuleCount, "baseline_entry_count", originalRules.Count, "extra_rule_count", extraCount,
             "routing_model", "direct_proxy_reject", "subscription_action_mapping", routing.Mapping(defaultProxy), "hosts_compiler_version", SubscriptionHosts.Version,
             "jump_group", jumpCandidates.Count > 0 ? airport : "", "jump_candidates", jumpCandidates.Count, "residential_group", residences.Count > 0 ? residential : "",
             "aggregate_group", jumpCandidates.Count > 0 ? aggregate : "", "source_groups", sourceGroups,
@@ -155,6 +162,7 @@ public static class SubscriptionBaselineCompiler
             "proxy_count", proxies.Count, "rule_count", SubscriptionBaseline.RuleCount(configuration), "contains_subscription_urls", false,
             "dns", O("configured", dnsExit.Length > 0, "enabled", dnsExit.Length > 0, "source", dnsExit.Length > 0 ? "privacy" : "client", "proxy_exit", dnsExit, "proxy_references", ProfileCompiler.ValidateDns(configuration)),
             "rule_merge", O("precedence", "user_groups_then_primary_subscription", "group_order", B(policy, "extra_rules_enabled", true) ? A(ProjectOrdering.RuleOrder(policy)) : new JsonArray(), "input_count", rules.Count, "duplicates_removed", 0));
+        report["asn"] = asn.Report(configuration, ConfigurationValidation.Target(settings));
         return new(configuration, report);
     }
 }

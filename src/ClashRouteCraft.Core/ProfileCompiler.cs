@@ -17,6 +17,7 @@ public static class ProfileCompiler
         if (SubscriptionBaseline.Enabled(policy)) return await SubscriptionBaselineCompiler.CompileAsync(settings, policy, policyPath, fetch, cancellation);
         string geoMode = GeoRules.Mode(policy);
         ParameterInspection.ValidateRules(policy);
+        var asn = new AsnPolicy(policy);
         var residenceDoc = ExpandEnvironment(YamlData.Read(fetch.Resolve(S(settings, "residential_file", "residential.yaml"))));
         var residences = (JsonArray)List(residenceDoc is JsonObject residenceMap ? residenceMap["proxies"] : residenceDoc, "住宅节点").DeepClone();
         ValidateResidences(residences);
@@ -70,7 +71,13 @@ public static class ProfileCompiler
         ParameterInspection.ValidateRules(policy, validActions);
         ParameterInspection.ValidateDnsParameters(policy, validActions);
         var candidates = new JsonArray();
-        void AddRule(string rule, string source, string stage) => candidates.Push(O("rule", rule, "source", source, "stage", stage));
+        void AddRule(string rule, string source, string stage, string? asnId = null, string? asnLabel = null)
+        {
+            string id = asnId ?? (stage == "manual" ? source.Replace("manual.", "manual:") : "manual:" + stage);
+            string manualKind = stage == "manual" ? source[7..] : stage;
+            string label = asnLabel ?? "手工 · " + (manualKind switch { "direct" => "直连", "reject" => "拦截", "proxy" => "代理", "first" => "旧前置规则", "supplemental" => "补充规则", _ => manualKind });
+            if (asn.Include(id, label, rule)) candidates.Push(O("rule", rule, "source", source, "stage", stage));
+        }
         int number = 0;
         foreach (var raw in L(policy, "first")) { number++; var entry = Map(raw, "first rule"); AddRule(Rules.WithAction(entry["match"], Action(entry["action"]), inputFormat: "match"), $"first[{number}]", "first"); }
         var orderNames = ProjectOrdering.RuleOrder(policy);
@@ -87,7 +94,7 @@ public static class ProfileCompiler
             string target = Action(remote["action"]);
             var loaded = await fetch.ReadAsync(remote, bytes => Rules.ParseRemote(bytes, remote), "规则·" + name, Path.GetDirectoryName(policyPath));
             var entries = List(loaded.Value, "远程规则");
-            foreach (var entry in entries) AddRule(Rules.WithAction(entry, target, inputFormat: "rule"), name, "remote");
+            foreach (var entry in entries) AddRule(Rules.WithAction(entry, target, inputFormat: "rule"), name, "remote", AsnPolicy.RemoteId(remote), "附加来源 · " + name);
             remoteSummaries.Push(O("name", name, "rules", entries.Count, "action", target));
         }
         foreach (var raw in L(policy, "rule_sets"))
@@ -96,7 +103,7 @@ public static class ProfileCompiler
             foreach (var item in L(set, "rules"))
             {
                 number++; var entry = Map(item, "导入规则"); if (!ImportedRuleSets.Included(set, entry)) continue;
-                AddRule(ImportedRuleSets.Rule(entry, Action(JsonValue.Create(ImportedRuleSets.Target(set, entry)))), $"rule-set:{S(set, "id")}[{number}]", "imported");
+                AddRule(ImportedRuleSets.Rule(entry, Action(JsonValue.Create(ImportedRuleSets.Target(set, entry)))), $"rule-set:{S(set, "id")}[{number}]", "imported", "imported:" + S(set, "id"), "导入规则集 · " + S(set, "name", S(set, "id")));
             }
         }
         number = 0;
@@ -120,6 +127,13 @@ public static class ProfileCompiler
         var dnsRouting = dnsExit.Length > 0 ? null : DnsRouting.Apply(configuration, policy, candidates);
         var embeddedGeosite = geoMode == "mc2-inline" ? await EmbedGeositeAsync(configuration, M(policy, "geosite_sources"), fetch, Path.GetDirectoryName(policyPath)!) : new JsonArray();
         var embeddedAsn = geoMode == "mc2-inline" ? await EmbedAsnAsync(configuration, M(policy, "asn_sources"), fetch, Path.GetDirectoryName(policyPath)!) : new JsonArray();
+        // Runtime sub-rules are allowed in the custom compiler and also need inspection.
+        if (configuration["sub-rules"] is JsonObject subRules)
+        {
+            var runtimeRules = O("sub-rules", subRules);
+            await asn.InspectDocumentAsync(runtimeRules, "runtime:sub-rules", "高级配置 · 子规则", fetch, root);
+            configuration["sub-rules"] = runtimeRules["sub-rules"]?.DeepClone();
+        }
         Nodes.CheckGraph(configuration); var references = ValidateDns(configuration);
         var report = O("built_at", DateTimeOffset.UtcNow.ToString("O"), "sources", summaries, "remote_rules", remoteSummaries, "fetches", fetch.Events,
             "rule_merge", mergeReport, "rule_compiler_version", Rules.Version, "hosts_compiler_version", SubscriptionHosts.Version, "embedded_geosite", embeddedGeosite, "embedded_asn", embeddedAsn,
@@ -129,6 +143,7 @@ public static class ProfileCompiler
             "selection", "priority tiers: url-test; tiers: fallback", "contains_subscription_urls", false,
             "dns", O("configured", configuration.ContainsKey("dns"), "enabled", B(M(configuration, "dns"), "enable"), "source", dnsExit.Length > 0 ? "privacy" : "policy.yaml", "proxy_exit", dnsExit, "proxy_references", references));
         if (dnsRouting is not null) report["dns_routing"] = dnsRouting;
+        report["asn"] = asn.Report(configuration, ConfigurationValidation.Target(settings));
         return new(configuration, report);
     }
     public static void ValidateResidences(JsonArray residences)

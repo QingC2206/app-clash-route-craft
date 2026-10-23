@@ -94,7 +94,11 @@ public static class ConfigurationValidation
             var config = Merge(O("geodata-mode", true), M(settings, "runtime")); config["rules"] = A(known);
             config["dns"] = DnsPrivacy.Enabled(policy) ? DnsPrivacy.Create("住宅出口") : policy["dns"]?.DeepClone();
             foreach (string file in GeoRules.RequiredDatabases(config))
+            {
+                // ASN exclusion/inline decisions are applied during compilation.
+                if (file == "ASN.mmdb") continue;
                 if (S(validation, "data_dir").Length == 0 || !File.Exists(Path.Combine(Resolve("data_dir"), file))) throw new BuildException($"内核校验缺少 {file}，请补齐校验数据库；客户端使用原生 GEO 也需要对应数据库。");
+            }
         }
         if (Target(settings) == "mc2" && S(validation, "mc2_package").Length > 0 && !File.Exists(Resolve("mc2_package"))) throw new BuildException("显式指定的 validation.mc2_package 不存在；可移除此可选配置，仅校验生成的主配置和 DNS");
     }
