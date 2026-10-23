@@ -499,7 +499,9 @@ class SshTests(unittest.TestCase):
         probe = "import runpy,sys; print(runpy.run_path(sys.argv[1])['KNOWN_HOSTS_FILE'])"
         result = subprocess.run([sys.executable,"-c",probe,str(script)],cwd=ROOT,capture_output=True,text=True,timeout=20)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(Path(result.stdout.strip()), folder/"router-known_hosts")
+        # Hosted Windows runners expose TEMP through an 8.3 username alias.
+        # Compare filesystem-resolved paths, not long-name vs short-name spelling.
+        self.assertEqual(Path(result.stdout.strip()).resolve(), (folder/"router-known_hosts").resolve())
 
 
 class LauncherTests(unittest.TestCase):
