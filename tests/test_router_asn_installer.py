@@ -229,6 +229,30 @@ class StatusTests(unittest.TestCase):
         with patch.dict(os.environ,{"NO_COLOR":"1"}):
             self.assertFalse(installer.terminal_color(self.Terminal()))
 
+    def test_host_key_mismatch_has_specific_guidance_and_encoding_fallback(self):
+        for pinned in (False, True):
+            for stream in (io.StringIO(), self.AsciiTerminal()):
+                error=installer.HostKeyMismatch("/project/router-known_hosts", pinned=pinned)
+                with contextlib.redirect_stderr(stream):
+                    installer.show_host_key_mismatch(error, plain=True)
+                output=stream.getvalue()
+                self.assertIn("[FAIL]", output)
+                self.assertIn(error.record, output)
+                self.assertNotIn("\033", output)
+                if pinned:
+                    self.assertIn("-HostKeySha256", output)
+                    self.assertNotIn("旧记录", output)
+                    self.assertNotIn("old entry", output)
+                else:
+                    self.assertNotIn("-HostKeySha256", output)
+                    self.assertTrue("旧记录" in output or "old entry" in output)
+                if isinstance(stream, self.AsciiTerminal):
+                    output.encode("ascii")
+                    self.assertIn("SSH fingerprint mismatch", output)
+                else:
+                    self.assertIn("SSH 指纹不匹配", output)
+                    self.assertIn("尚未发送密码", output)
+
     def test_installed_and_already_installed_have_distinct_success_messages(self):
         for status, word in (("installed","安装成功"),("already_installed","无需重复安装")):
             stream=io.StringIO()
@@ -270,6 +294,17 @@ class LoginFlowTests(unittest.TestCase):
             self.assertEqual(installer.main(),1)
         download.assert_not_called()
         self.assertIn("[FAIL]",errors.getvalue())
+
+    def test_host_key_error_prints_specific_message_without_downloading(self):
+        errors=io.StringIO()
+        with patch.object(installer,"LOGIN_FILE",self.login), patch.object(sys,"argv",["install-router-asn.py"]), \
+             patch.object(installer,"dependency",return_value=object()), patch.object(installer,"connect",side_effect=installer.HostKeyMismatch("/project/router-known_hosts")), \
+             patch.object(installer,"database") as download, contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(errors):
+            self.assertEqual(installer.main(),1)
+        download.assert_not_called()
+        self.assertIn("SSH 指纹不匹配",errors.getvalue())
+        self.assertNotIn("SSH operation failed",errors.getvalue())
+        self.assertNotIn("fixture-密码",errors.getvalue())
 
     def test_json_mode_preserves_final_machine_result(self):
         output=io.StringIO()
@@ -394,7 +429,8 @@ class SshTests(unittest.TestCase):
 
     def test_fingerprint_mismatch_rejected_before_password_auth(self):
         self.args.host_key_sha256 = "SHA256:wrong"
-        with self.assertRaises(installer.InstallError): installer.connect(paramiko, self.args, "fixture-password")
+        with self.assertRaises(installer.HostKeyMismatch) as error: installer.connect(paramiko, self.args, "fixture-password")
+        self.assertTrue(error.exception.pinned)
         self.assertEqual(self.auth_attempts, [])
 
     def test_unknown_noninteractive_host_rejected_before_password_auth(self):
@@ -449,7 +485,7 @@ class SshTests(unittest.TestCase):
         self.save_host(path, paramiko.RSAKey.generate(2048))
         before = path.read_bytes()
         self.args.host_key_sha256 = None
-        with self.assertRaisesRegex(installer.InstallError, "host key changed for this project") as error:
+        with self.assertRaisesRegex(installer.HostKeyMismatch, "SSH fingerprint mismatch") as error:
             installer.connect(paramiko, self.args, "fixture-password")
         self.assertIn(str(path), str(error.exception))
         self.assertEqual(self.auth_attempts, [])

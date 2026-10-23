@@ -29,6 +29,13 @@ class InstallError(Exception):
     pass
 
 
+class HostKeyMismatch(InstallError):
+    def __init__(self, record, pinned=False):
+        super().__init__(f"SSH fingerprint mismatch; no credentials sent. Record: {record}")
+        self.record = str(record)
+        self.pinned = pinned
+
+
 def can_encode(stream, text):
     try:
         text.encode(getattr(stream, "encoding", None) or "utf-8")
@@ -77,6 +84,23 @@ def show_result(result, plain=False):
         print(text if can_encode(sys.stdout, text) else english)
     if result.get("backup"):
         print("Backup: " + result["backup"])
+
+
+def show_host_key_mismatch(error, plain=False):
+    status_line(False, "SSH 指纹不匹配，已停止连接（尚未发送密码）。",
+                "SSH fingerprint mismatch. Connection stopped before sending the password.", plain, sys.stderr)
+    lines = [
+        ("请先确认：当前网络、路由器地址和项目是否对应。", "Check that the network, router address and project match."),
+        ("若已换机或刷机：核实新设备身份后，更新 -HostKeySha256 / --host-key-sha256 参数，再重试。",
+         "If the router was replaced or reflashed, verify its identity before updating -HostKeySha256 / --host-key-sha256 and retrying.") if error.pinned else
+        ("若已换机或刷机：核实新设备身份后，备份并移除下列文件中该地址的旧记录，再重试确认指纹。",
+         "If the router was replaced or reflashed, verify its identity, back up the file below, remove only this address's old entry, then retry and confirm the fingerprint."),
+        ("主机记录：" + error.record, "Host records: " + error.record),
+    ]
+    for chinese, english in lines:
+        text = chinese if can_encode(sys.stderr, chinese) else english
+        encoding = getattr(sys.stderr, "encoding", None) or "utf-8"
+        print(text.encode(encoding, errors="replace").decode(encoding), file=sys.stderr)
 
 
 def dependency():
@@ -344,7 +368,7 @@ def connect(paramiko, args, password):
             fingerprint = "SHA256:" + base64.b64encode(hashlib.sha256(key.asbytes()).digest()).decode().rstrip("=")
             if args.host_key_sha256:
                 if fingerprint != args.host_key_sha256:
-                    raise InstallError("SSH host fingerprint mismatch; no credentials sent.")
+                    raise HostKeyMismatch(known, pinned=True)
             elif sys.stdin.isatty():
                 print(f"First connection to {hostname}\nSSH host fingerprint: {fingerprint}")
                 if input("Confirm this router fingerprint (type yes): ").strip() != "yes":
@@ -366,7 +390,7 @@ def connect(paramiko, args, password):
                 key = self.get_remote_server_key()
                 actual = "SHA256:" + base64.b64encode(hashlib.sha256(key.asbytes()).digest()).decode().rstrip("=")
                 if actual != args.host_key_sha256:
-                    raise InstallError("SSH host fingerprint mismatch; no credentials sent.")
+                    raise HostKeyMismatch(known, pinned=True)
 
     try:
         client.connect(args.host, port=args.port, username=args.user, password=password, timeout=20,
@@ -375,7 +399,7 @@ def connect(paramiko, args, password):
         return client
     except paramiko.BadHostKeyException:
         client.close()
-        raise InstallError(f"SSH host key changed for this project; connection refused before password authentication. Record: {known}. Verify the router identity before updating this record; no records were overwritten.") from None
+        raise HostKeyMismatch(known) from None
     except paramiko.AuthenticationException:
         client.close()
         raise InstallError("SSH authentication failed. Check the router username/password (including router-login.json) and whether SSH password login is enabled. ASN download has not started.") from None
@@ -434,6 +458,9 @@ def main():
     except KeyboardInterrupt:
         status_line(False, "已取消：未完成本次安装验证。", "CANCELLED: installation verification did not complete.", args.plain, sys.stderr)
         return 130
+    except HostKeyMismatch as error:
+        show_host_key_mismatch(error, args.plain)
+        return 1
     except (InstallError, OSError, ValueError, subprocess.SubprocessError) as error:
         status_line(False, "执行失败：本次未能确认 ASN 安装成功，请查看下方原因。", "FAILED: ASN installation success could not be confirmed. See the reason below.", args.plain, sys.stderr)
         print(str(error).encode(getattr(sys.stderr, "encoding", None) or "utf-8", errors="replace").decode(getattr(sys.stderr, "encoding", None) or "utf-8"), file=sys.stderr)

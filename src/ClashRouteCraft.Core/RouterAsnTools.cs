@@ -6,7 +6,7 @@ namespace ClashRouteCraft.Core;
 public static class RouterAsnTools
 {
     public const string DirectoryName = "router-asn";
-    public const int Version = 4;
+    public const int Version = 5;
     public static IReadOnlyList<(string Path, byte[] Bytes)> Outputs(string outputDirectory)
     {
         var files = new List<(string, byte[])>();
