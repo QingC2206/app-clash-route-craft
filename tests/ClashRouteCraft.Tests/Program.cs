@@ -676,7 +676,7 @@ await Test("Preflight distinguishes missing caches and catches DNS references an
     M(policy, "dns")["nameserver"] = A("https://1.1.1.1/dns-query#PROXY"); session.Documents["policy.yaml"].Set(policy);
     Check(ParameterInspection.Inspect(session).Any(x => x.Title.Contains("DNS") && x.State == "fail"), "DNS accepted a rule-only alias as an actual proxy group");
     var settings = session.Settings; foreach (var raw in L(settings, "sources")) Map(raw, "source")["enabled"] = false; session.Documents["settings.yaml"].Set(settings);
-    Check(ParameterInspection.Inspect(session).Any(x => x.Title == "订阅配置" && x.State == "fail"));
+    Check(ParameterInspection.Inspect(session).Any(x => x.Title == "订阅配置" && x.State == "pass"), "Residential-only project was rejected");
     Map(L(settings, "sources")[0], "source")["enabled"] = "invalid"; session.Documents["settings.yaml"].Set(settings);
     Check(ParameterInspection.Inspect(session).Last().Title == "本地校验资源");
     using var canceled = new CancellationTokenSource(); canceled.Cancel();
@@ -978,6 +978,7 @@ await DnsPrivacyRegression.Run(Test);
 await RuleSemanticsRegression.Run(Test);
 await AsnPolicyRegression.Run(Test);
 await RouterAsnToolsRegression.Run(Test);
+await ResidentialOnlyRegression.Run(Test);
 Console.WriteLine($"RESULT {passed} passed, {failed} failed"); Environment.ExitCode = failed == 0 ? 0 : 1;
 
 static JsonObject MergeBridge(JsonArray input) { var (rules, report) = Rules.MergeRules(input); return O("rules", rules, "report", report); }

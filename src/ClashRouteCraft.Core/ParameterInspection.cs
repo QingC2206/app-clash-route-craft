@@ -21,7 +21,7 @@ public static class ParameterInspection
             JsonObject http = new(); JsonObject[] urls = [];
             var preparation = Evaluate(RemoteContentTitle, "policy", "RemoteUrls_proxy", () =>
             {
-                var policy = SubscriptionBaseline.ExpandPolicy(session.Policy);
+                var policy = SubscriptionBaseline.EffectivePolicy(session.Policy, session.Settings);
                 if (SubscriptionBaseline.Enabled(policy) && !B(policy, "extra_rules_enabled", true)) return ("附加规则已停用", false);
                 urls = ProjectOrdering.OrderedRemotes(policy).Where(x => B(x, "enabled", true) && S(x, "url").Length > 0).ToArray();
                 http = Map(ExpandEnvironment(M(session.Settings, "http")), "http");
@@ -94,10 +94,13 @@ public static class ParameterInspection
         foreach (var (name, doc) in session.Documents)
         {
             cancellation.ThrowIfCancellationRequested();
-            yield return Evaluate("配置文件 · " + name, "yaml", name, () => { var value = name == "settings.yaml" ? ConfigurationValidation.ExpandSettings(Map(doc.Parse(), name)) : name == "policy.yaml" ? SubscriptionBaseline.ExpandPolicy(Map(doc.Parse(), name)) : ExpandEnvironment(doc.Parse()); if (name == "residential.yaml") List(value is JsonObject map ? map["proxies"] : value, "住宅节点"); else Map(value, name); parsed[name] = value; return ("语法与有效配置的环境变量通过", false); });
+            yield return Evaluate("配置文件 · " + name, "yaml", name, () => { var value = name == "settings.yaml" ? ConfigurationValidation.ExpandSettings(Map(doc.Parse(), name)) : name == "policy.yaml" ? SubscriptionBaseline.EffectivePolicy(Map(doc.Parse(), name), parsed.GetValueOrDefault("settings.yaml") as JsonObject ?? new()) : ExpandEnvironment(doc.Parse()); if (name == "residential.yaml") List(value is JsonObject map ? map["proxies"] : value, "住宅节点"); else Map(value, name); parsed[name] = value; return ("语法与有效配置的环境变量通过", false); });
         }
         JsonObject settings = parsed.GetValueOrDefault("settings.yaml") as JsonObject ?? new();
         JsonObject policy = parsed.GetValueOrDefault("policy.yaml") as JsonObject ?? new();
+        bool standalone = false;
+        try { standalone = SubscriptionBaseline.Primary(settings) is null; policy = SubscriptionBaseline.EffectivePolicy(policy, settings); }
+        catch (BuildException) { /* The per-field checks below report invalid settings. */ }
         bool subscriptionBaseline = S(policy, "rule_source", "custom") == "subscription";
         bool checkExtras = !subscriptionBaseline || B(policy, "extra_rules_enabled", true);
         JsonNode? residenceDoc = parsed.GetValueOrDefault("residential.yaml");
@@ -116,7 +119,7 @@ public static class ParameterInspection
                 if (subscriptionBaseline) actions.Add(name);
                 else { actions.Add("订阅·" + name); actions.Add("优先级·" + (sources.IndexOf(raw) + 1)); }
             }
-            return ($"{enabled} 个已启用订阅；名称和健康检查参数通过", false);
+            return (enabled == 0 ? "无订阅模式：直接连接住宅代理，不创建机场入口" : $"{enabled} 个已启用订阅；名称和健康检查参数通过", false);
         });
         for (int i = 0; i < sources.Count; i++)
         {
@@ -162,6 +165,7 @@ public static class ParameterInspection
         }
         if (subscriptionBaseline) yield return Evaluate("订阅规则基线", "sources", "AddSource", () =>
         {
+            if (standalone) { SubscriptionBaseline.StandaloneFinal(policy); return ("无订阅：使用个人规则及所选兜底动作", false); }
             var ordered = (JsonObject)settings.DeepClone(); ProjectOrdering.NumberSources(ordered);
             var primary = SubscriptionBaseline.Primary(ordered) ?? throw new BuildException("至少启用一个订阅");
             string name = S(primary, "name"), path = session.SnapshotPath(name);
@@ -174,7 +178,7 @@ public static class ParameterInspection
         });
         yield return Evaluate("住宅出口 · 名称", "residential", "AddResidence", () =>
         {
-            if (residences.Count == 0) { if (subscriptionBaseline) return ("未添加住宅出口，统一代理出口使用机场入口", false); throw new BuildException("请添加住宅出口"); }
+            if (residences.Count == 0) { if (subscriptionBaseline && !standalone) return ("未添加住宅出口，统一代理出口使用机场入口", false); throw new BuildException("没有启用订阅时，请至少添加一个可直接连接的住宅代理"); }
             var names = new HashSet<string>();
             foreach (var raw in residences)
             {
@@ -242,6 +246,7 @@ public static class ParameterInspection
             {
                 string exit = DnsPrivacy.Exit(policy);
                 if (exit == "residential" && residences.Count == 0) throw new BuildException("DNS 隐私增强需要住宅节点，请添加住宅或改选机场入口");
+                if (exit == "airport" && standalone) throw new BuildException("没有启用订阅，DNS 隐私增强请选择住宅出口");
                 return ($"Fake-IP 隐私增强；代理 DNS 经{(exit == "residential" ? "住宅出口" : "机场入口")}；生成时检查实际组引用，MC2 需另行应用 DNS", false);
             }
             if (subscriptionBaseline) return ("DNS 由客户端 / MC2 管理；本次忽略项目中保留的旧 DNS 设置，不生成配套 DNS 文件", false);

@@ -1,0 +1,76 @@
+# Editable reference catalogue. Update settings/rule-presets.yaml and click Reload.
+# Nothing is applied automatically. urls are rule-list URLs, not website URLs.
+# domains match a domain and all its subdomains. rules are match conditions WITHOUT actions.
+# Example: rules: ['DOMAIN,api.example.com', 'IP-CIDR,192.0.2.0/24,no-resolve']
+# Sources: https://github.com/MetaCubeX/meta-rules-dat
+#          https://github.com/blackmatrix7/ios_rule_script
+#          https://github.com/Lanlan13-14/Rules
+version: 1
+presets:
+  - id: ai-common
+    category: AI 服务
+    name: 常用 AI（Claude / ChatGPT / Gemini / Grok）
+    description: MetaCubeX 维护的四组服务域名；建议使用统一代理出口。与下方单项重复添加时会跳过同组相同 URL。
+    urls:
+      - https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/anthropic.yaml
+      - https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/openai.yaml
+      - https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/google-gemini.yaml
+      - https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/xai.yaml
+  - id: claude
+    category: AI 服务
+    name: Claude / Anthropic
+    urls:
+      - https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/anthropic.yaml
+  - id: chatgpt
+    category: AI 服务
+    name: ChatGPT / OpenAI
+    urls:
+      - https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/openai.yaml
+  - id: gemini
+    category: AI 服务
+    name: Gemini
+    urls:
+      - https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/google-gemini.yaml
+  - id: grok
+    category: AI 服务
+    name: Grok / xAI
+    description: xAI 域名；在 X 内使用 Grok 时可能还需单独设置 X 的分流。
+    urls:
+      - https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/xai.yaml
+  - id: wechat
+    category: 中国常用
+    name: 微信
+    description: Lanlan13-14 的纯域名名单，避免引入微信 ASN 的大范围匹配；支持其通配域名写法。
+    urls:
+      - https://raw.githubusercontent.com/Lanlan13-14/Rules/main/rules/Domain/WeChat.yaml
+  - id: feishu
+    category: 中国常用
+    name: 飞书
+    description: 飞书域名；分流不保证解决 UDP、运营商或应用自身的连接问题。
+    urls:
+      - https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/feishu.yaml
+  - id: cn-shopping
+    category: 中国常用
+    name: 购物与生活（阿里 / 京东 / 拼多多 / 美团）
+    description: 阿里名单范围包含其其他业务，并非仅淘宝；请按实际需求选择动作。
+    urls:
+      - https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/alibaba.yaml
+      - https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/jd.yaml
+      - https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/pinduoduo.yaml
+      - https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/meituan.yaml
+  - id: cn-streaming
+    category: 中国流媒体
+    name: 哔哩哔哩 / 爱奇艺 / 腾讯视频 / 优酷
+    description: MetaCubeX 与 blackmatrix7 维护。腾讯视频名单包含 IP 条目；名单覆盖以维护者内容为准，不能绕过地域版权限制。
+    urls:
+      - https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/bilibili.yaml
+      - https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/iqiyi.yaml
+      - https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/TencentVideo/TencentVideo.list
+      - https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/youku.yaml
+  - id: cn-remote
+    category: 中国远程应用
+    name: 网易 UU 远程 / ToDesk（基础域名）
+    description: 基于官网域名的基础参考，可在此文件中补充。未采用进程名名单，因为路由器无法识别终端进程；P2P 的纯 IP 流量可能仍走兜底动作。
+    domains:
+      - uuyc.163.com
+      - todesk.com

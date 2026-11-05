@@ -64,9 +64,11 @@ MC2 1.2.2 导入时只保留代理、策略组和规则等字段，启动时拼�
 3. 复制 `HomeChain.MC2DNS.yaml` 的全文（包括 `dns:`），粘贴到 MC2“DNS 设置 → 编辑 Fake-IP”。增强文件保留 Fake-IP，不会改成 Redir-Host。
 4. 选择 Fake-IP，保存并重启。在 MC2“当前配置”中检查 `enhanced-mode`、`nameserver` 和出口组名，随后验收联网。
 
-恢复默认时：关闭软件的增强开关，保存并重新生成；将 `HomeChain.MC2DNS.Default.yaml` 全文粘贴到“编辑 Fake-IP”，选择 Fake-IP，保存并重启。必要时重连设备或清理设备 DNS 缓存。**只关闭软件开关或重新导入主 YAML，均不会自动撤销 MC2 已保存的增强 DNS。**
+恢复默认时：关闭软件的增强开关，保存并重新生成。恢复 Redir-Host 就将 `default/Redir-Host.yaml` 全文粘贴到“编辑 Redir-Host”；恢复 Fake-IP 就将 `default/Fake-IP.yaml` 全文粘贴到“编辑 Fake-IP”。选择对应模式，保存并重启，不要合并两份配置。必要时重连设备或清理设备 DNS 缓存。**只关闭软件开关或重新导入主 YAML，均不会自动撤销 MC2 已保存的增强 DNS。**
 
-MC2 目标每次成功生成都会带上 `HomeChain.MC2DNS.Default.yaml` 和 `HomeChain.DNS-README.txt`。恢复文件是 MC2 1.2.2 ARM64 安装包 `merlinclash/yaml_dns/fakeip.yaml` 的原装 DNS 内容，文件头注明来源及原始 SHA-256。它不依赖住宅组，也不包含订阅、节点或凭据；保留原装 `geosite:gfw` 引用，使用 MC2 原有的 GeoSite.dat，不提供或下载新数据库。它仅恢复该版本默认 DNS，不是完整配置备份；若此前自行改过默认 DNS，应恢复自己保存的文本。
+MC2 目标每次成功生成都会在输出目录的 `default/` 中保存 `Redir-Host.yaml` 和 `Fake-IP.yaml`，另附 `HomeChain.DNS-README.txt`。两份默认文件名固定，与主配置名称及隐私增强开关无关。模板已内置，无需安装包或联网下载；文件删除后再次生成即可恢复。升级后再次生成会清理未修改的旧 `HomeChain.MC2DNS.Default.yaml`，手工修改过的旧文件和 `default/` 中其他文件会保留。
+
+恢复文件分别来自 MC2 1.2.2 ARM64 安装包的 `merlinclash/yaml_dns/redirhost.yaml`、`merlinclash/yaml_dns/fakeip.yaml`，文件头注明来源及原始 SHA-256。它们不依赖住宅组，也不包含订阅、节点或凭据；保留原装 `geosite:gfw` 引用，使用 MC2 原有的 GeoSite.dat，不提供或下载新数据库。仅恢复该版本默认 DNS，不是完整配置备份；若此前自行改过默认 DNS，应恢复自己保存的文本。即使尚未生成或项目不可用，仍可在 DNS 输出页选择对应模式、查看并复制内置模板。
 
 即使项目生成失败或输出文件被删除，也可在“DNS配置输出(MC2专用)”中点击“复制官方默认 DNS（用于恢复）”，从程序内置资源取回原版。恢复文件不受当前项目编辑或内核校验失败影响。
 

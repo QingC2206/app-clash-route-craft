@@ -106,7 +106,7 @@ try {
         # Explicit public-file inventory: never recursively copy a workspace or docs folder.
         $publicDocuments = @(
             'LICENSE', 'THIRD-PARTY-NOTICES.md', 'README.md', 'README.en.md',
-            'docs/usage.md', 'docs/validation.md', 'docs/router-asn.md', 'docs/releasing.md', 'docs/screenshots/README.md',
+            'docs/usage.md', 'docs/validation.md', 'docs/router-asn.md', 'docs/rule-presets.md', 'docs/releasing.md', 'docs/screenshots/README.md',
             'docs/screenshots/overview.png', 'docs/screenshots/subscriptions.png',
             'docs/screenshots/residential.png', 'docs/screenshots/routing.png',
             'docs/screenshots/custom-rules.png', 'docs/screenshots/dns-privacy.png', 'docs/screenshots/output.png'

@@ -13,7 +13,7 @@ public static class ProfileCompiler
         if (M(settings, "runtime").ContainsKey("dns")) throw new BuildException("DNS 统一由 policy.yaml 的顶层 dns 维护");
         using var fetch = new Fetcher(root, M(settings, "http"), offline, cancellation);
         string policyPath = fetch.Resolve(S(settings, "policy_file", "policy.yaml"));
-        var policy = SubscriptionBaseline.ExpandPolicy(Map(YamlData.Read(policyPath), "policy"));
+        var policy = SubscriptionBaseline.EffectivePolicy(Map(YamlData.Read(policyPath), "policy"), settings);
         if (SubscriptionBaseline.Enabled(policy)) return await SubscriptionBaselineCompiler.CompileAsync(settings, policy, policyPath, fetch, cancellation);
         string geoMode = GeoRules.Mode(policy);
         ParameterInspection.ValidateRules(policy);

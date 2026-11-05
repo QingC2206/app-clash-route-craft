@@ -38,6 +38,7 @@ public static class BuiltInDefaults
             finally { if (File.Exists(temp)) File.Delete(temp); }
         }
         var documents = Documents();
+        Create(Path.Combine("settings", "rule-presets.yaml"), Text("rule-presets.yaml"));
         Create(Path.Combine("settings", "rule-defaults.yaml"), YamlData.Write(RuleDefaults.Extract(Map(YamlData.Parse(documents["policy.yaml"]), "默认规则"))));
         foreach (var (name, text) in documents) Create(Path.Combine("config", "Example", name), text);
         return restored;

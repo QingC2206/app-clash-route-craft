@@ -10,9 +10,14 @@ namespace ClashRouteCraft.Desktop;
 
 public sealed partial class MainWindow
 {
+    bool ResidentialOnly()
+    {
+        try { return session is not null && SubscriptionBaseline.Primary(session.Settings) is null; }
+        catch (BuildException) { return false; }
+    }
     bool UsesSubscriptionBaseline()
     {
-        try { return session is not null && SubscriptionBaseline.Enabled(session.Policy); }
+        try { return session is not null && (ResidentialOnly() || SubscriptionBaseline.Enabled(session.Policy)); }
         catch (BuildException) { try { return SubscriptionBaseline.Enabled(Map(YamlData.Parse(session!.Documents["policy.yaml"].Baseline), "policy")); } catch (BuildException) { return false; } }
     }
     Control OverviewPage()
@@ -21,7 +26,7 @@ public sealed partial class MainWindow
         var issues = Issues();
         return Stack(Card(session!.ProjectName, Label(OutputState(), true), IssuesCard(issues), Button("前往生成配置", () => Navigate("build"))),
             Card("配置准备", Row(Button("填写订阅", () => Navigate("sources")), Button("填写住宅出口", () => Navigate("residential")), Button("调整分流规则（可选）", () => Navigate("policy"))),
-                Label("首次使用：填写并拉取完整订阅即可生成，住宅出口可选。默认使用第一个启用订阅的规则，DNS 由客户端管理。", true, 13)),
+                Label("首次使用：填写并拉取订阅，或只填写可直接连接的住宅代理。无订阅时使用个人规则及所选兜底动作；有订阅时默认沿用主订阅规则。DNS 默认由客户端管理。", true, 13)),
             Card("使用生成结果", Label(UsesDnsPrivacy() ? "已选择 DNS 隐私增强。普通客户端导入主配置；MC2 还需应用配套 Fake-IP DNS，可从 DNS 输出页恢复官方默认。" : UsesSubscriptionBaseline() ? "只需导入生成的主配置；MC2 / 客户端继续管理 DNS。若曾应用增强 DNS，还需在 MC2 恢复。" : session.ReadReport() is null ? "生成成功后，可查看主配置和 MC2 专用 DNS 文件。" : "文件已保存在本地，可导入使用。", true),
                 Row(Button("主配置输出", () => NavigateOutput("HomeChain.yaml")), Button("DNS 配置", () => NavigateOutput("HomeChain.MC2DNS.yaml")))));
     }
@@ -38,6 +43,7 @@ public sealed partial class MainWindow
             }); RenderPage();
         }); add.Name = "AddSource"; add.IsEnabled = !IsBusy;
         content.Children.Add(Row(add)); content.Children.Add(Label(UsesSubscriptionBaseline() ? "第一个启用的订阅提供分流规则，归并为本地直连、代理、拦截；其余订阅仅提供节点。上下移动只更换规则来源。机场入口可选聚合组或任一订阅组，组内自动测速；默认筛选香港、日本、台湾、新加坡。所有代理业务使用同一个“代理出口”。" : "上方优先，下方备用。勾选的订阅参与生成；点“编辑”填写链接或调整筛选。", true, 13));
+        content.Children.Add(Note("订阅可选：只用住宅代理时，删除或停用所有订阅，并在“住宅出口”填写可直接访问的代理。此时不会生成机场入口或链式住宅节点。"));
         for (int i = 0; i < sources.Count; i++)
         {
             int index = i; var source = Map(sources[i], "订阅"); string name = S(source, "name"); var snapshot = Label(SnapshotInfo(source), true, 12); Action updateProblems = () => { }; Button? pull = null;
@@ -146,7 +152,7 @@ public sealed partial class MainWindow
     {
         var values = session!.Residences; var content = new StackPanel { Spacing = 10 };
         var add = Button("＋ 添加住宅", () => { string name = session!.NextResidenceName(); MutateResidence(list => { list.Push(O("name", name, "type", "socks5", "server", "", "port", 12345, "username", "", "password", "", "udp", true)); expandedResidence = list.Count - 1; }); RenderPage(); }); add.Name = "AddResidence";
-        content.Children.Add(Row(add)); content.Children.Add(Label(UsesSubscriptionBaseline() ? "每个住宅生成“[链式] 节点名”和“[直连] 节点名”两条路径，链式路径经机场入口连接住宅。在客户端的“代理出口”统一选择住宅出口或机场入口；有住宅时默认使用第一个链式住宅。此处的“[直连]”表示直接连接住宅代理，业务仍从住宅 IP 出站。" : "填写服务商提供的住宅代理信息。上方节点作为首次默认出口；实际使用以设备面板选择为准。", true, 13));
+        content.Children.Add(Row(add)); content.Children.Add(Label(ResidentialOnly() ? "当前没有启用订阅：仅生成“[直连] 节点名”，直接连接住宅代理，网站出口仍为住宅 IP。无需前置机场；第一个住宅作为首次默认出口。" : UsesSubscriptionBaseline() ? "每个住宅生成“[链式] 节点名”和“[直连] 节点名”两条路径，链式路径经机场入口连接住宅。在客户端的“代理出口”统一选择住宅出口或机场入口；有住宅时默认使用第一个链式住宅。此处的“[直连]”表示直接连接住宅代理，业务仍从住宅 IP 出站。" : "填写服务商提供的住宅代理信息。上方节点作为首次默认出口；实际使用以设备面板选择为准。", true, 13));
         for (int i = 0; i < values.Count; i++)
         {
             int index = i; var node = Map(values[i], "住宅"); void Change(string key, JsonNode? value) => MutateResidence(list => Map(list[index], "住宅")[key] = value?.DeepClone());
@@ -186,8 +192,8 @@ public sealed partial class MainWindow
     }
     Control PolicyPage()
     {
-        bool baseline = SubscriptionBaseline.Enabled(session!.Policy);
-        int setCount = ImportedRuleSets.Sets(session.Policy).Count;
+        bool baseline = UsesSubscriptionBaseline();
+        int setCount = ImportedRuleSets.Sets(session!.Policy).Count;
         if (baseline && setCount == 0 && policyTab == "sets") policyTab = "rules";
         Button Tab(string text, Action clicked, bool selected) { var b = new Button { Content = text }; b.Classes.Add("tab"); if (selected) b.Classes.Add("selected"); b.Click += (_, _) => Try(clicked); return b; }
         var rulesTab = Tab("分流规则", () => { policyTab = "rules"; RenderPage(); }, policyTab == "rules" || baseline && policyTab == "sets"); rulesTab.Name = "PolicyRulesTab";
@@ -207,18 +213,23 @@ public sealed partial class MainWindow
             saveDefault.IsEnabled = restoreDefault.IsEnabled = session?.IsReadOnly != true && !IsBusy;
             ToolTip.SetTip(saveDefault, "将当前分流规则写入 Example；不复制订阅、住宅或 DNS");
             ToolTip.SetTip(restoreDefault, "将 Example 的全部规则（含导入规则集）应用到当前项目；保留订阅、节点、住宅出口和 DNS 配置。应用后保存并生成。");
-            var actions = Row(saveDefault, restoreDefault); DockPanel.SetDock(actions, Dock.Right); toolbar.Children.Add(actions);
+            var presets = AsyncButton("添加规则预设", AddRulePresetsAsync); presets.Name = "AddRulePresets";
+            presets.IsEnabled = session?.IsReadOnly != true && !IsBusy;
+            var actions = Row(presets, saveDefault, restoreDefault); DockPanel.SetDock(actions, Dock.Right); toolbar.Children.Add(actions);
         }
         toolbar.Children.Add(tabs);
         policyTabsHost.Content = toolbar; policyTabsHost.IsVisible = true;
         if (policyTab == "dns") return DnsForm();
         var useSubscription = Check("使用第一个启用订阅的规则（推荐）", baseline, value => { Mutate("policy.yaml", doc => doc["rule_source"] = value ? "subscription" : "custom"); RenderPage(); }); useSubscription.Name = "UseSubscriptionBaseline";
+        useSubscription.IsEnabled = !ResidentialOnly();
+        if (ResidentialOnly()) return Stack(Card("无订阅 · 住宅直连", Label("使用个人自定义规则及下方兜底动作，不引入额外域名库。添加并启用订阅后，可恢复使用主订阅规则。DNS 默认由客户端管理。", true, 13)), AsnPolicyCard(), policyTab == "sets" ? RuleSetsForm() : RuleForms());
         var ordered = (JsonObject)session!.Settings.DeepClone(); ProjectOrdering.NumberSources(ordered);
         string source = SubscriptionBaseline.Primary(ordered) is { } primary ? S(primary, "name") : "尚未启用订阅";
         return Stack(Card("规则来源", useSubscription, Label(baseline ? $"当前来源：{source}。使用该订阅的匹配条件和顺序，动作归并为三类；其他订阅只提供节点。自定义规则优先于订阅规则，无需再次导入规则集。" : "当前使用旧的自定义编排。勾选上方即可切换到订阅基线；保留现有配置内容，保存并重新生成后生效。", true, 13)), AsnPolicyCard(), policyTab == "sets" ? RuleSetsForm() : RuleForms());
     }
     Control UnifiedRoutingOverview()
     {
+        if (ResidentialOnly()) return Card("三类分流", Label("本地直连 → 当前网络；代理 → 住宅出口 → [直连] 住宅节点；拦截 → 拒绝连接。", true, 12), Label("按下方组顺序匹配个人规则，未命中时使用兜底动作。不会创建机场入口，也不会自动降级为网站直连。", true, 12));
         var help = Label("优先顺序：自定义规则 → 主订阅规则。订阅内部保持原顺序，只归并动作。代理业务统一使用“代理出口”，有住宅时默认住宅，否则使用机场入口。", true, 12); help.Name = "UnifiedRoutingHelp";
         var card = Card("三类分流", help,
             Label("本地直连 · 使用本机网络，吸收订阅的直连规划。", true, 12),
@@ -272,13 +283,13 @@ public sealed partial class MainWindow
     Control RuleForms()
     {
         var policy = session!.Policy; var order = ProjectOrdering.RuleOrder(policy).ToList(); var content = new StackPanel { Spacing = 10 };
-        bool baseline = SubscriptionBaseline.Enabled(policy);
+        bool baseline = UsesSubscriptionBaseline();
         if (baseline)
         {
             content.Children.Add(UnifiedRoutingOverview());
             var extras = Check("启用个人附加规则", B(policy, "extra_rules_enabled", true), value => { Mutate("policy.yaml", doc => doc["extra_rules_enabled"] = value); RenderPage(); }); extras.Name = "EnableExtraRules";
             content.Children.Add(extras);
-            if (!B(policy, "extra_rules_enabled", true)) content.Children.Add(Note("附加规则已停用，内容仍保留。当前完全使用主订阅规则；可随时重新启用。"));
+            if (!B(policy, "extra_rules_enabled", true)) content.Children.Add(Note(ResidentialOnly() ? "个人规则已停用，仅使用下方兜底动作。" : "附加规则已停用，内容仍保留。当前完全使用主订阅规则；可随时重新启用。"));
         }
         string GroupName(string group) => group switch { "direct" => baseline ? "本地直连" : "直连", "reject" => "拦截", _ => "代理" };
         var orderHint = Label("按组从上到下匹配：上一组的全部规则优先于下一组，包含手工、URL 和已导入规则。", true, 12); orderHint.Name = "RuleOrderHint";
@@ -306,7 +317,21 @@ public sealed partial class MainWindow
         }
         policyFocusField = "";
         content.Children.Add(groups); int advanced = remotes.Count(x => !ProjectOrdering.IsUrlEntry(x)); if (advanced > 0) content.Children.Add(Label($"另有 {advanced} 条高级来源，保留在高级 YAML 中维护。", true, 12));
-        if (baseline) { groups.IsEnabled = B(policy, "extra_rules_enabled", true); content.Children.Add(Note("以上自定义规则优先于订阅规则；所有代理动作共用“代理出口”。订阅的规则依赖和兜底动作保留，DNS 策略单独设置。")); return content; }
+        if (baseline)
+        {
+            groups.IsEnabled = B(policy, "extra_rules_enabled", true);
+            if (ResidentialOnly())
+            {
+                var choices = new[] { ("PROXY", "代理 · 使用住宅出口"), ("DIRECT", "直连 · 使用当前网络"), ("REJECT", "拒绝 · 阻止连接") }.Select(x => new ComboBoxItem { Tag = x.Item1, Content = x.Item2 }).ToList();
+                string value = S(policy, "final", "PROXY");
+                if (!choices.Any(x => Equals(x.Tag, value))) choices.Add(new() { Tag = value, Content = "请重新选择 · " + value });
+                var fallback = new ComboBox { Name = "FinalAction", ItemsSource = choices, SelectedItem = choices.Single(x => Equals(x.Tag, value)), HorizontalAlignment = HorizontalAlignment.Stretch };
+                fallback.SelectionChanged += (_, _) => { if (fallback.SelectedItem is ComboBoxItem { Tag: string action }) Mutate("policy.yaml", doc => doc["final"] = action); };
+                content.Children.Add(Card("未命中名单时", Field("兜底动作", fallback), Label("默认走住宅代理；可明确选择直连或拒绝。不自动添加国内域名库。", true, 12)));
+            }
+            else content.Children.Add(Note("以上自定义规则优先于订阅规则；所有代理动作共用“代理出口”。订阅的规则依赖和兜底动作保留，DNS 策略单独设置。"));
+            return content;
+        }
         string currentAction = S(policy, "final", "PROXY");
         var options = new[] { ("PROXY", "默认代理 · 使用面板选择的代理路径"), ("DIRECT", "直连 · 不经过代理"), ("REJECT", "拒绝 · 阻止连接"), ("AIRPORT", "机场入口 · 仅经过机场"), ("住宅出口", "住宅出口 · 经机场连接住宅") }.Select(x => new ComboBoxItem { Tag = x.Item1, Content = x.Item2 }).ToList();
         if (!options.Any(x => Equals(x.Tag, currentAction))) options.Add(new() { Tag = currentAction, Content = "已有自定义动作 · " + currentAction });
@@ -328,7 +353,7 @@ public sealed partial class MainWindow
     }
     Control DnsForm()
     {
-        if (SubscriptionBaseline.Enabled(session!.Policy) || DnsPrivacy.Enabled(session.Policy)) return DnsPrivacyForm();
+        if (UsesSubscriptionBaseline() || DnsPrivacy.Enabled(session!.Policy)) return DnsPrivacyForm();
         var dns = M(session!.Policy, "dns"); void Set(string key, JsonNode value) => Mutate("policy.yaml", doc => { if (doc["dns"] is null) doc["dns"] = new JsonObject(); M(doc, "dns")[key] = value.DeepClone(); });
         var apply = Button("一键应用推荐 DNS 策略", () => { if (session.IsReadOnly || IsBusy) return; session.Documents["policy.yaml"].Set(DnsSettings.ApplyRecommended(session.Policy)); RenderPage(); SetStatus("推荐 DNS 策略已填入；请保存并重新生成，再更新主配置与 MC2 DNS。"); }); apply.Name = "ApplyRecommendedDns";
         var follow = Check("DNS 解析按自定义域名规则分流", B(session.Policy, "dns_follow_rules"), value => Mutate("policy.yaml", doc => doc["dns_follow_rules"] = value)); follow.Name = "DnsFollowDomainRules";

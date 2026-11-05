@@ -14,7 +14,7 @@ static class BuiltInResourcesRegression
         await test("Embedded defaults restore missing files and preserve personal inputs", () =>
         {
             using var f = new Fixture(); var original = Directory.GetFiles(f.Project, "*", SearchOption.AllDirectories).ToDictionary(x => x, File.ReadAllBytes);
-            Check(BuiltInDefaults.Ensure(f.Root).Count == 4 && BuiltInDefaults.Ensure(f.Root).Count == 0, "Initialization not idempotent");
+            Check(BuiltInDefaults.Ensure(f.Root).Count == 5 && BuiltInDefaults.Ensure(f.Root).Count == 0, "Initialization not idempotent");
             Check(BuildEngine.DiscoverProjects(f.Root).SequenceEqual(["SampleOne"]), "Example became a normal project");
             var example = new WorkspaceSession(f.Root, "Example"); Check(example.IsReadOnly && SubscriptionBaseline.Enabled(example.Policy) && !example.Policy.ContainsKey("dns") && example.Residences.Count == 0 && ImportedRuleSets.Sets(example.Policy).Count == 0, "Factory default incorrect");
             var custom = example.Policy; custom["direct"] = A("DOMAIN,my.example"); RuleDefaults.Save(f.Root, custom); string saved = File.ReadAllText(RuleDefaults.FilePath(f.Root));

@@ -12,7 +12,7 @@ internal static class NativeSmoke
         string workspace = Path.Combine(Path.GetTempPath(), "homechain-native-smoke-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(workspace);
         try
         {
-            if (BuiltInDefaults.Ensure(workspace).Count != 4 || BuiltInDefaults.Ensure(workspace).Count != 0) throw new BuildException("内置模板初始化失败");
+            if (BuiltInDefaults.Ensure(workspace).Count != 5 || BuiltInDefaults.Ensure(workspace).Count != 0) throw new BuildException("内置模板初始化失败");
             File.Delete(Path.Combine(workspace, "config", "Example", "policy.yaml"));
             if (BuiltInDefaults.Ensure(workspace).Count != 1 || CoreValidation.FindResources(workspace).Mc2Package.Length != 0) throw new BuildException("内置模板恢复或资源边界自检失败");
             WorkspaceSession.CreateProject(workspace, "SmokeTest");
@@ -95,11 +95,28 @@ internal static class NativeSmoke
             Task.Run(() => CheckDnsPrivacy(workspace)).GetAwaiter().GetResult();
             Task.Run(() => CheckCustomGroupOrder(workspace)).GetAwaiter().GetResult();
             Task.Run(() => CheckAsnPolicy(workspace)).GetAwaiter().GetResult();
+            Task.Run(() => CheckResidentialOnly(workspace)).GetAwaiter().GetResult();
             File.WriteAllText(resultPath, O("ok", true, "pages", pages, "project_crud", true, "ordering", true, "custom_group_priority", true, "asn_policy", true, "restore_and_subscription_identity", true, "classified_rules", true, "readonly_example", true, "rule_defaults", true, "parameter_inspection", true, "parameter_remote_urls", true, "standalone_subscription_pull", true, "forced_subscription_cache_fallback", true, "residence_proxy_probe", true, "rule_semantics", true, "rule_semantics_v2", true, "domain_list_auto_detection", true, "clash_target_and_dns_cleanup", true, "airport_entrance_groups", true, "dns_privacy", true, "dns_default_recovery", true, "dependency_fingerprint", true, "proxy_count", I(built.Report, "proxy_count", 0), "mode", "native UI initialization, isolated builds and loopback rule/subscription/proxy requests; no window shown").ToJsonString(JsonOptions));
             return 0;
         }
         catch (Exception ex) { File.WriteAllText(resultPath, O("ok", false, "error_type", ex.GetType().Name, "error", ex is BuildException ? ex.Message : "原生界面或生成自检失败").ToJsonString(JsonOptions)); return 1; }
         finally { if (Directory.Exists(workspace)) Directory.Delete(workspace, true); }
+    }
+    static async Task CheckResidentialOnly(string workspace)
+    {
+        WorkspaceSession.CreateProject(workspace, "ResidentialOnly");
+        var session = new WorkspaceSession(workspace, "ResidentialOnly");
+        var settings = session.Settings; settings["sources"] = A(); settings["validation"] = O(); session.Documents["settings.yaml"].Set(settings);
+        session.SetResidences(A(new System.Text.Json.Nodes.JsonNode?[] { O("name", "Home", "type", "socks5", "server", "127.0.0.1", "port", 1080) }));
+        var catalogue = RulePresets.Load(workspace);
+        if (catalogue.Count < 4) throw new BuildException("规则预设原生加载失败");
+        var append = RulePresets.Append(session.Policy, catalogue.Where(x => x.Id == "cn-remote"), "direct");
+        if (append.RulesAdded != 2) throw new BuildException("规则预设原生追加失败");
+        DnsPrivacy.SetEnabled(append.Policy, true); session.Documents["policy.yaml"].Set(append.Policy); session.Save();
+        var result = await new BuildEngine().BuildProjectAsync(workspace, session.ProjectName, new(Offline: true));
+        var config = Map(YamlData.Read(result.OutputPath), "output");
+        if (Canonical(config).Contains("机场入口") || Canonical(config).Contains("dialer-proxy") || L(config, "proxies").Count != 1
+            || S(L(config, "rules").Last()) != "MATCH,代理出口" || S(M(result.Report, "dns"), "proxy_exit") != "住宅出口") throw new BuildException("无订阅住宅直连原生生成失败");
     }
     static async Task CheckAsnPolicy(string workspace)
     {
@@ -150,7 +167,7 @@ internal static class NativeSmoke
     static async Task CheckDnsPrivacy(string workspace)
     {
         var session = new WorkspaceSession(workspace, "EntranceSmoke");
-        string before = File.ReadAllText(Path.Combine(session.OutputPath, "HomeChain.yaml"));
+        string before = Canonical(YamlData.Read(Path.Combine(session.OutputPath, "HomeChain.yaml")));
         var policy = session.Policy; DnsPrivacy.SetEnabled(policy, true); session.Documents["policy.yaml"].Set(policy); session.Save();
         var enhanced = await new BuildEngine().BuildProjectAsync(workspace, "EntranceSmoke", new(Offline: true));
         var config = Map(YamlData.Read(enhanced.OutputPath), "privacy config");
@@ -160,8 +177,8 @@ internal static class NativeSmoke
             throw new BuildException("Fake-IP 隐私增强原生自检失败");
         policy = session.Policy; DnsPrivacy.SetEnabled(policy, false); session.Documents["policy.yaml"].Set(policy); session.Save();
         await new BuildEngine().BuildProjectAsync(workspace, "EntranceSmoke", new(Offline: true));
-        if (File.ReadAllText(enhanced.OutputPath) != before || File.Exists(Path.Combine(session.OutputPath, "HomeChain.MC2DNS.yaml"))
-            || File.ReadAllText(Path.Combine(session.OutputPath, "HomeChain" + DnsPrivacy.DefaultSuffix)) != DnsPrivacy.DefaultText()
+        if (Canonical(YamlData.Read(enhanced.OutputPath)) != before || File.Exists(Path.Combine(session.OutputPath, "HomeChain.MC2DNS.yaml"))
+            || DnsPrivacy.DefaultOutputs(session.OutputPath).Any(x => !File.Exists(x.Path) || !File.ReadAllBytes(x.Path).SequenceEqual(x.Bytes))
             || !File.Exists(Path.Combine(session.OutputPath, "HomeChain" + DnsPrivacy.GuideSuffix))) throw new BuildException("默认 DNS 恢复原生自检失败");
     }
     static async Task CheckCustomGroupOrder(string workspace)

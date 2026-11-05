@@ -9,15 +9,20 @@ public static class SubscriptionBaselineCompiler
     {
         ParameterInspection.ValidateRules(policy);
         var asn = new AsnPolicy(policy);
-        var primary = SubscriptionBaseline.Primary(settings) ?? throw new BuildException("至少启用一个订阅");
-        string primaryName = Name(primary["name"], "订阅");
+        var primary = SubscriptionBaseline.Primary(settings);
+        bool standalone = primary is null;
+        string primaryName = primary is null ? "" : Name(primary["name"], "订阅");
         var sources = L(settings, "sources").OfType<JsonObject>().Where(x => B(x, "enabled", true)).OrderBy(x => I(x, "priority", 100)).ToArray();
         var selection = M(settings, "selection"); var summaries = new JsonArray();
-        var read = await fetch.ReadAsync(primary, Nodes.Document, primaryName);
-        var original = await SubscriptionBaseline.SnapshotAsync(Map(read.Value, "订阅"), fetch, read.Base, primaryName);
-        SubscriptionBaseline.RequireRules(original, primaryName);
+        var original = O("proxies", new JsonArray(), "rules", new JsonArray());
+        if (primary is not null)
+        {
+            var read = await fetch.ReadAsync(primary, Nodes.Document, primaryName);
+            original = await SubscriptionBaseline.SnapshotAsync(Map(read.Value, "订阅"), fetch, read.Base, primaryName);
+            SubscriptionBaseline.RequireRules(original, primaryName);
+            await asn.InspectDocumentAsync(original, AsnPolicy.SubscriptionId(primaryName), "主订阅 · " + primaryName, fetch, read.Base);
+        }
         int originalRuleCount = SubscriptionBaseline.RuleCount(original);
-        await asn.InspectDocumentAsync(original, AsnPolicy.SubscriptionId(primaryName), "主订阅 · " + primaryName, fetch, read.Base);
         var routing = new SubscriptionRouting(original);
         var configuration = O("mixed-port", 7890, "allow-lan", false, "mode", "rule", "log-level", "info");
         var runtime = M(settings, "runtime");
@@ -43,7 +48,7 @@ public static class SubscriptionBaselineCompiler
             sourceCandidates.Add((name, eligible));
             summaries.Push(O("source", name, "priority", I(source, "priority", 100), "nodes", nodes.Count, "eligible", eligible.Count, "rules_used", source == primary));
         }
-        CollectCandidates(primary, proxies);
+        if (primary is not null) CollectCandidates(primary, proxies);
         foreach (var source in sources.Skip(1))
         {
             cancellation.ThrowIfCancellationRequested(); string name = Name(source["name"], "订阅");
@@ -63,6 +68,7 @@ public static class SubscriptionBaselineCompiler
         var residenceDoc = ExpandEnvironment(YamlData.Read(fetch.Resolve(S(settings, "residential_file", "residential.yaml"))));
         var residences = (JsonArray)List(residenceDoc is JsonObject map ? map["proxies"] : residenceDoc, "住宅节点").DeepClone();
         if (residences.Count > 0) ProfileCompiler.ValidateResidences(residences);
+        if (standalone && residences.Count == 0) throw new BuildException("没有启用订阅时，请至少添加一个可直接连接的住宅代理");
         // Reserve old residential action names before allocating generated groups.
         // Existing user rules can keep referring to the unprefixed residential name.
         foreach (var raw in residences)
@@ -70,7 +76,7 @@ public static class SubscriptionBaselineCompiler
         string defaultProxy = Unique(SubscriptionRouting.ProxyGroup);
         string airport = Unique("机场入口"), aggregate = Unique("聚合组"), residential = Unique("住宅出口");
         var sourceGroups = new JsonArray();
-        if (jumpCandidates.Count == 0) throw new BuildException("没有符合筛选条件的机场入口节点，无法建立统一代理出口。请在订阅页面调整入口筛选，不会自动改成直连。");
+        if (!standalone && jumpCandidates.Count == 0) throw new BuildException("没有符合筛选条件的机场入口节点，无法建立统一代理出口。请在订阅页面调整入口筛选，不会自动改成直连。");
         if (jumpCandidates.Count > 0)
         {
             JsonObject Pool(string name, List<string> members)
@@ -95,21 +101,25 @@ public static class SubscriptionBaselineCompiler
         {
             var node = Map(raw, "住宅"); string name = S(node, "name");
             string chainedName = Unique(SubscriptionBaseline.ChainedName(name)), directName = Unique(SubscriptionBaseline.DirectName(name));
-            aliases[name] = chainedName;
+            aliases[name] = standalone ? directName : chainedName;
             string oldDirect = "直连住宅 · " + name;
             if (!used.Contains(oldDirect)) aliases[oldDirect] = directName;
             var direct = (JsonObject)node.DeepClone();
             direct["name"] = directName; direct.Remove("dialer-proxy"); proxies.Push(direct); directNames.Add(directName);
-            var chained = (JsonObject)node.DeepClone(); chained["name"] = chainedName; chained["dialer-proxy"] = airport; proxies.Push(chained); chainedNames.Add(chainedName);
+            if (!standalone)
+            {
+                var chained = (JsonObject)node.DeepClone(); chained["name"] = chainedName; chained["dialer-proxy"] = airport; proxies.Push(chained); chainedNames.Add(chainedName);
+            }
         }
         if (residences.Count > 0) groups.Push(O("name", residential, "type", "select", "proxies", chainedNames.Concat(directNames)));
-        groups.Insert(0, O("name", defaultProxy, "type", "select", "proxies", residences.Count > 0 ? A(residential, airport) : A(airport)));
+        groups.Insert(0, O("name", defaultProxy, "type", "select", "proxies", standalone ? A(residential) : residences.Count > 0 ? A(residential, airport) : A(airport)));
         Nodes.CheckGraph(configuration);
         SubscriptionHosts.Required(M(configuration, "hosts"), L(configuration, "proxies"), "合并订阅");
         var actions = proxies.Concat(groups).Select(x => S(Map(x, "节点/分组"), "name")).Concat(Nodes.Reserved).ToHashSet();
         string Action(JsonNode? raw)
         {
             string value = S(raw, "PROXY");
+            if (standalone && value is ("AIRPORT" or "机场入口" or "订阅跳板")) throw new BuildException("无订阅模式不能引用机场入口，请将规则动作改为代理");
             if (value is "PROXY" or "默认代理" or "AIRPORT" or "机场入口" or "订阅跳板" or "住宅出口" or SubscriptionRouting.ProxyGroup) return defaultProxy;
             if (routing.Contains(value)) return routing.Action(value, defaultProxy);
             value = aliases.GetValueOrDefault(value, value);
@@ -145,13 +155,14 @@ public static class SubscriptionBaselineCompiler
         int extraCount = rules.Count;
         if (rules.Any(x => Rules.SplitFull(S(x))[0] is "MATCH" or "FINAL")) throw new BuildException("附加规则不能使用 MATCH / FINAL 覆盖整个订阅，请删除或停用附加兜底规则");
         foreach (var rule in routing.Rewrite(originalRules, defaultProxy)) rules.Add(rule?.DeepClone());
+        if (standalone) rules.Push(JsonValue.Create("MATCH," + Action(JsonValue.Create(SubscriptionBaseline.StandaloneFinal(policy)))));
         configuration["rules"] = rules;
         if (original.ContainsKey("sub-rules")) configuration["sub-rules"] = routing.RewriteSubRules(defaultProxy);
         foreach (var provider in M(configuration, "rule-providers").Select(x => Map(x.Value, "规则来源")))
             if (S(provider, "proxy") is { Length: > 0 } action) provider["proxy"] = routing.Action(action, defaultProxy);
         string dnsExit = DnsPrivacy.Apply(configuration, policy, residences.Count > 0 ? residential : "", jumpCandidates.Count > 0 ? airport : "");
         var report = O("built_at", DateTimeOffset.UtcNow.ToString("O"), "sources", summaries, "fetches", fetch.Events,
-            "rule_source", "subscription", "subscription_baseline_version", SubscriptionBaseline.Version, "baseline_source", primaryName,
+            "rule_source", standalone ? "residential" : "subscription", "subscription_baseline_version", SubscriptionBaseline.Version, "baseline_source", primaryName,
             "baseline_rule_count", originalRuleCount, "baseline_entry_count", originalRules.Count, "extra_rule_count", extraCount,
             "routing_model", "direct_proxy_reject", "subscription_action_mapping", routing.Mapping(defaultProxy), "hosts_compiler_version", SubscriptionHosts.Version,
             "jump_group", jumpCandidates.Count > 0 ? airport : "", "jump_candidates", jumpCandidates.Count, "residential_group", residences.Count > 0 ? residential : "",

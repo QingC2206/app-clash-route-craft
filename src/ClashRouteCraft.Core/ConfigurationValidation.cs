@@ -41,7 +41,7 @@ public static class ConfigurationValidation
             string exclude = S(source, "exclude", S(M(settings, "selection"), "exclude")); if (exclude.Length > 0) Pattern(exclude, name);
             Headers(source);
         }
-        if (enabled == 0) throw new BuildException("至少启用一个订阅");
+        // A project may use directly reachable residential proxies without subscriptions.
         var selection = M(settings, "selection");
         if (I(selection, "interval", 300) < 1 || I(selection, "timeout", 5000) < 1 || I(selection, "tolerance", 50) < 0) throw new BuildException("健康检查间隔、超时或延迟容差无效");
         if (!HttpUrl(S(selection, "test_url", "https://www.gstatic.com/generate_204"))) throw new BuildException("健康检查地址需要 HTTP(S) URL");
@@ -85,7 +85,7 @@ public static class ConfigurationValidation
         var validation = M(settings, "validation"); if (!B(validation, "required")) return;
         string Resolve(string key) => Path.GetFullPath(S(validation, key), project);
         if (S(validation, "mihomo").Length == 0 || !File.Exists(Resolve("mihomo"))) throw new BuildException("缺少 Mihomo 校验程序；请在应用设置中下载缺失资源，或检查高级 YAML 中的 validation");
-        if (policy is not null && !SubscriptionBaseline.Enabled(policy) && GeoRules.Mode(policy) == "native")
+        if (policy is not null && SubscriptionBaseline.Primary(settings) is not null && !SubscriptionBaseline.Enabled(policy) && GeoRules.Mode(policy) == "native")
         {
             var known = new List<string>();
             foreach (string group in new[] { "direct", "reject", "proxy" }) known.AddRange(L(policy, group).Select(x => Rules.WithAction(x, "DIRECT")));

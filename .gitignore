@@ -52,8 +52,10 @@ router-known_hosts.*
 !src/ClashRouteCraft.Core/Resources/Defaults/settings.yaml
 !src/ClashRouteCraft.Core/Resources/Defaults/residential.yaml
 !src/ClashRouteCraft.Core/Resources/Defaults/policy.yaml
+!src/ClashRouteCraft.Core/Resources/Defaults/rule-presets.yaml
 !src/ClashRouteCraft.Core/Resources/Defaults/dns.yaml
 !src/ClashRouteCraft.Core/Resources/Defaults/mc2-fakeip-default.yaml
+!src/ClashRouteCraft.Core/Resources/Defaults/mc2-redirhost-default.yaml
 !tests/fixtures/wechat-domain.yaml
 !tools/python-reference/tests/fixtures/dns.yaml
 

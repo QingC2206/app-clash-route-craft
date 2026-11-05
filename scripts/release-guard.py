@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 NAME = "ClashRouteCraft-win-x64"
 PROGRAM = {"ClashRouteCraft.exe", "av_libglesv2.dll", "libSkiaSharp.dll", "libHarfBuzzSharp.dll"}
 DOCUMENTS = {"LICENSE", "THIRD-PARTY-NOTICES.md", "README.md", "README.en.md",
-             "docs/usage.md", "docs/validation.md", "docs/router-asn.md", "docs/releasing.md",
+             "docs/usage.md", "docs/validation.md", "docs/router-asn.md", "docs/rule-presets.md", "docs/releasing.md",
              "docs/screenshots/README.md"}
 DOCUMENTS |= {f"docs/screenshots/{name}.png" for name in
               ("overview", "subscriptions", "residential", "routing", "custom-rules", "dns-privacy", "output")}

@@ -20,9 +20,17 @@ Current release: **[v1.16.5](https://github.com/QingC2206/app-clash-route-craft/
 4. Add direct, proxy, or block rules as needed. DNS remains client-managed by default; keeping that default is a good starting point.
 5. Select a target under **生成配置 (Generate configuration)**, check and generate, then open **主配置输出 (Main configuration output)**. Import `HomeChain.yaml` into your client. Generation does not automatically apply anything to a router.
 
+**Residential-only projects require no subscription.** Remove or disable all subscriptions and add a directly reachable residential proxy. The generator creates only `[直连]` residential paths, without subscription entry groups or chained nodes. Personal rules are followed by an explicit fallback (proxy by default); no domestic domain database is added automatically. DNS stays client-managed unless you enable privacy enhancement through the residential exit.
+
 Mihomo validation binaries and GeoData are not bundled; download optional resources through the app when needed. MC2 installation packages are outside the downloader's scope. A **nodes-only cache cannot serve as the primary rule source**: fetch or import the complete configuration first.
 
 ## Core features
+
+### Editable rule presets
+
+Under routing, select **添加规则预设 (Add rule presets)**, choose one or more entries, select direct/proxy/block, and confirm. Entries are appended to the existing rule groups; same-group duplicates are skipped, and cross-group conflicts keep the existing group priority. Save and regenerate to apply. Subscription, node and DNS settings stay intact.
+
+The catalogue is loaded from `settings/rule-presets.yaml` in the workspace. Missing files are restored from a public embedded template; upgrades preserve custom edits. Each entry can combine rule-list URLs, domain suffixes and explicit match conditions. Edit the file and click **重新加载 (Reload)**. Built-in references cover AI, commonly used Chinese services, Chinese streaming and basic remote-access domains. See the [catalogue schema and limits](docs/rule-presets.md).
 
 ### Multiple subscriptions, one rule baseline
 
@@ -68,7 +76,7 @@ The default leaves DNS to the client / MC2. Optional **Fake-IP DNS privacy enhan
 
 This can reduce local DNS exposure for proxied domains. Trade-offs include potentially slower initial queries or connections, dependence on the selected exit, and compatibility issues with some applications. It does not guarantee bypassing platform risk checks or control a browser's independent DoH.
 
-**MC2 requires a separate DNS application step.** Apply `HomeChain.MC2DNS.yaml` following the generated instructions. When disabling enhancement, restore MC2's default or your previously saved DNS too; importing the main YAML alone will not undo DNS changes. A version-specific stock Fake-IP recovery template from MC2 1.2.2 ARM64 is also exported. See the [usage and recovery guide (Chinese)](docs/usage.md).
+**MC2 requires a separate DNS application step.** Apply `HomeChain.MC2DNS.yaml` following the generated instructions. When disabling enhancement, restore MC2's default or your previously saved DNS too; importing the main YAML alone will not undo DNS changes. Stock Redir-Host and Fake-IP recovery templates from MC2 1.2.2 ARM64 are exported in `default/`, with fixed filenames independent of the main profile name. See the [usage and recovery guide (Chinese)](docs/usage.md).
 
 ### Inspect dependencies and understand the output
 
@@ -83,7 +91,8 @@ For MC2, ASN controls let you exclude ASN rules by source or explicitly retain t
 | `HomeChain.yaml` | Main configuration for Clash / Mihomo / MC2 |
 | `HomeChain.report.json` | Generation and validation report |
 | `HomeChain.MC2DNS.yaml` | MC2 companion file when the corresponding DNS configuration is enabled |
-| `HomeChain.MC2DNS.Default.yaml` | Version-specific stock DNS recovery template for the MC2 target |
+| `default/Redir-Host.yaml` | Version-specific stock Redir-Host DNS recovery template for the MC2 target |
+| `default/Fake-IP.yaml` | Version-specific stock Fake-IP DNS recovery template for the MC2 target |
 | `HomeChain.DNS-README.txt` | MC2 DNS application and recovery instructions |
 | `router-asn/` | Standalone ASN tools and instructions |
 

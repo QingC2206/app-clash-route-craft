@@ -35,7 +35,7 @@ for release in manifest:
         # Offline README language links, screenshots and referenced guides must resolve.
         expected_images = {"overview.png", "subscriptions.png", "residential.png", "routing.png", "custom-rules.png", "dns-privacy.png", "output.png"}
         assert {p.name for p in (directory / "docs/screenshots").glob("*.png")} == expected_images
-        for relative in ["README.md", "README.en.md", "docs/usage.md", "docs/validation.md", "docs/router-asn.md", "docs/releasing.md", "docs/screenshots/README.md", *["docs/screenshots/" + name for name in expected_images]]:
+        for relative in ["README.md", "README.en.md", "docs/usage.md", "docs/validation.md", "docs/router-asn.md", "docs/rule-presets.md", "docs/releasing.md", "docs/screenshots/README.md", *["docs/screenshots/" + name for name in expected_images]]:
             assert (directory / relative).read_bytes() == (root / relative).read_bytes(), relative
         for document in directory.rglob("*.md"):
             for target in re.findall(r'!?\[[^\]]*\]\(([^)]+)\)', document.read_text(encoding="utf-8-sig")):

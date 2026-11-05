@@ -6,7 +6,7 @@ namespace ClashRouteCraft.Core;
 /// <summary>The first subscription supplies matches; actions use the unified routing model.</summary>
 public static class SubscriptionBaseline
 {
-    public const int Version = 6;
+    public const int Version = 7;
     public const string JumpInclude = "(?i)(香港|港|HK|Hong Kong|HongKong|🇭🇰|日本|东京|大阪|JP|Japan|Tokyo|Osaka|🇯🇵|台湾|台灣|台|台北|TW|Taiwan|Taipei|🇹🇼|新加坡|狮城|獅城|SG|Singapore|🇸🇬)";
     public const string JumpExclude = "(?i)官网|流量|过期|到期|重置|优选|群|TG|Static|静态|直连";
     public static string ChainedName(string name) => "[链式] " + name;
@@ -19,6 +19,21 @@ public static class SubscriptionBaseline
     }
     public static JsonObject? Primary(JsonObject settings) => L(settings, "sources").OfType<JsonObject>()
         .Where(x => B(x, "enabled", true)).OrderBy(x => I(x, "priority", 100)).FirstOrDefault();
+    public static JsonObject EffectivePolicy(JsonObject policy, JsonObject settings)
+    {
+        if (Primary(settings) is not null) return ExpandPolicy(policy);
+        var standalone = (JsonObject)policy.DeepClone();
+        standalone["rule_source"] = "subscription";
+        var expanded = ExpandPolicy(standalone);
+        if (policy.ContainsKey("final")) expanded["final"] = ExpandEnvironment(policy["final"]);
+        return expanded;
+    }
+    public static string StandaloneFinal(JsonObject policy)
+    {
+        string action = S(policy, "final", "PROXY");
+        if (action is not ("PROXY" or "DIRECT" or "REJECT")) throw new BuildException("无订阅模式的兜底动作请选择代理、直连或拒绝");
+        return action;
+    }
     public static bool IsPrimary(JsonObject settings, string name)
     {
         var ordered = (JsonObject)settings.DeepClone(); ProjectOrdering.NumberSources(ordered);

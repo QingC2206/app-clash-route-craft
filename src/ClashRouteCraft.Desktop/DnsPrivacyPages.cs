@@ -30,7 +30,7 @@ public sealed partial class MainWindow
         var content = Stack(card);
         if (enabled)
         {
-            var exit = new ComboBox { Name = "DnsPrivacyExit", ItemsSource = new[] { "住宅出口（默认）", "机场入口" }, SelectedIndex = DnsPrivacy.Exit(session.Policy) == "airport" ? 1 : 0, MinWidth = 230, IsEnabled = !session.IsReadOnly };
+            var exit = new ComboBox { Name = "DnsPrivacyExit", ItemsSource = new[] { new ComboBoxItem { Content = "住宅出口（默认）" }, new ComboBoxItem { Content = ResidentialOnly() ? "机场入口（没有启用订阅）" : "机场入口", IsEnabled = !ResidentialOnly() } }, SelectedIndex = DnsPrivacy.Exit(session.Policy) == "airport" ? 1 : 0, MinWidth = 230, IsEnabled = !session.IsReadOnly };
             exit.SelectionChanged += (_, _) =>
             {
                 if (exit.SelectedIndex < 0) return;
@@ -38,7 +38,7 @@ public sealed partial class MainWindow
                 SetStatus("代理 DNS 出口已修改，请保存并重新生成。");
             };
             content.Children.Add(Card("代理 DNS 出口", exit,
-                Label("跟随对应策略组在客户端的选择。没有住宅节点时请先添加住宅，或明确改选机场入口；不会自动降级为直连。", true, 13),
+                Label(ResidentialOnly() ? "无订阅模式请选择住宅出口，DNS 将直接通过住宅代理发出；不会自动降级为本地直连。" : "跟随对应策略组在客户端的选择。没有住宅节点时请先添加住宅，或明确改选机场入口；不会自动降级为直连。", true, 13),
                 Label("不额外添加域名库或 DNS 规则集。末尾 GEOIP 判断可能先查询代理 DNS，再在直连时重新解析。", true, 12)));
         }
         content.Children.Add(Card("MC2 的应用与恢复", Label("MC2 不采用主 YAML 的 DNS，需在“编辑 Fake-IP”粘贴配套文件，选择 Fake-IP，保存并重启。关闭增强后也需恢复 MC2 DNS，仅重新导入主配置不会撤销。", true, 13),
@@ -66,16 +66,20 @@ public sealed partial class MainWindow
             content.Children.Add(CodeCard(editor, copy));
         }
         else content.Children.Add(Card("未生成配套 DNS", Label(S(report ?? new(), "target") == "clash" ? "当前生成目标是普通 Mihomo，DNS 如有配置则包含在主 YAML 中，无需配套文件。" : "默认模式由客户端管理 DNS；启用隐私增强后请保存并重新生成。若之前已在 MC2 应用增强配置，请按下方步骤恢复。", true, 13)));
-        var copyDefault = AsyncButton("复制官方默认 DNS（用于恢复）", async () =>
+        var recoveryMode = new ComboBox { Name = "DefaultDnsMode", ItemsSource = new[] { "Redir-Host", "Fake-IP" }, SelectedIndex = 1, MinWidth = 160 };
+        string RecoveryMode() => recoveryMode.SelectedIndex == 0 ? "redir-host" : "fake-ip";
+        string RecoveryTitle() => recoveryMode.SelectedIndex == 0 ? "Redir-Host" : "Fake-IP";
+        var defaultEditor = Editor(DnsPrivacy.DefaultText(RecoveryMode()), true); defaultEditor.Name = "DefaultDnsOutput";
+        recoveryMode.SelectionChanged += (_, _) => { defaultEditor.Text = DnsPrivacy.DefaultText(RecoveryMode()); };
+        var copyDefault = AsyncButton("复制所选模式的默认 DNS", async () =>
         {
-            if (Clipboard is not null && !IsBusy) { await Clipboard.SetTextAsync(DnsPrivacy.DefaultText()); SetStatus("已复制 MC2 1.2.2 原装 Fake-IP DNS，请在 MC2 的“编辑 Fake-IP”应用并重启"); }
+            if (Clipboard is not null && !IsBusy) { await Clipboard.SetTextAsync(DnsPrivacy.DefaultText(RecoveryMode())); SetStatus($"已复制 MC2 1.2.2 原装 {RecoveryTitle()} DNS，请在 MC2 的“编辑 {RecoveryTitle()}”应用并重启"); }
         }); copyDefault.Name = "CopyDefaultDns"; copyDefault.IsEnabled = !IsBusy;
-        var defaultEditor = Editor(DnsPrivacy.DefaultText(), true); defaultEditor.Name = "DefaultDnsOutput";
-        content.Children.Insert(1, Card("恢复 MC2 官方默认 DNS", Label("内置 MC2 1.2.2 ARM64 原装 Fake-IP 模板。生成失败时仍可复制；仅恢复 DNS。", true, 13),
-            Row(copyDefault, Button("打开输出目录", () => OpenPath(session.OutputPath))),
+        content.Children.Insert(1, Card("恢复 MC2 官方默认 DNS", Label("内置 MC2 1.2.2 ARM64 原装 Redir-Host 和 Fake-IP 模板。先选择要恢复的模式；生成失败时仍可复制，仅恢复 DNS。", true, 13),
+            Row(recoveryMode, copyDefault, Button("打开输出目录", () => OpenPath(session.OutputPath))),
             new Expander { Header = "恢复步骤与适用版本", HorizontalAlignment = HorizontalAlignment.Stretch, Content = Stack(
-                Label("1. 关闭软件的隐私增强，保存并重新生成。\n2. 复制默认 DNS 全文，粘贴到 MC2 的“DNS 设置 → 编辑 Fake-IP”。\n3. 选择 Fake-IP，保存并重启。仅重新导入主配置不会恢复 DNS。", true, 13),
-                Label("MC2 输出同时保存 HomeChain.MC2DNS.Default.yaml 和 HomeChain.DNS-README.txt。如曾修改过原 DNS，请优先恢复自己的备份。原装模板引用 MC2 已有的 GeoSite.dat；增强方案不新增域名库。此文件不是节点或规则备份。", true, 12)) },
+                Label("1. 关闭软件的隐私增强，保存并重新生成。\n2. 选择 Redir-Host 或 Fake-IP，复制默认 DNS 全文，粘贴到 MC2 对应模式的编辑窗口。\n3. 选择同一 DNS 模式，保存并重启。仅重新导入主配置不会恢复 DNS。", true, 13),
+                Label("MC2 输出固定保存 default/Redir-Host.yaml、default/Fake-IP.yaml，以及 HomeChain.DNS-README.txt。两份默认配置任选其一，不要合并。如曾修改过原 DNS，请优先恢复自己的备份。原装模板引用 MC2 已有的 GeoSite.dat；增强方案不新增域名库。此文件不是节点或规则备份。", true, 12)) },
             new Expander { Name = "DefaultDnsPreview", Header = "查看官方默认 DNS", HorizontalAlignment = HorizontalAlignment.Stretch, Content = CodeCard(defaultEditor) }));
         return content;
     }

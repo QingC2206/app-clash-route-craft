@@ -7,11 +7,21 @@ namespace ClashRouteCraft.Core;
 /// <summary>An optional DNS preset; does not translate routing rules or introduce rule providers.</summary>
 public static class DnsPrivacy
 {
-    public const int ArtifactVersion = 1;
-    public const string DefaultSuffix = ".MC2DNS.Default.yaml";
+    public const int ArtifactVersion = 2;
+    public const string LegacyDefaultSuffix = ".MC2DNS.Default.yaml";
+    public const string DefaultDirectory = "default";
     public const string GuideSuffix = ".DNS-README.txt";
     public const string OfficialVersion = "MC2 1.2.2 ARM64";
     public const string OfficialSourceHash = "22c47f81d7f55960bc9400f58ab1c9a4741bc14d2aaadd743b633c2e727c3577";
+    public const string RedirHostSourceHash = "38f92c2b3111b89b00c48caaa55c1be852cb086a8622d6543b1a6c1425f38323";
+    public static string DefaultRelativePath(string mode) => DefaultDirectory + "/" + (mode switch
+    {
+        "fake-ip" => "Fake-IP.yaml",
+        "redir-host" => "Redir-Host.yaml",
+        _ => throw new BuildException("未知的默认 DNS 模式")
+    });
+    public static IReadOnlyList<(string Path, byte[] Bytes)> DefaultOutputs(string directory) =>
+        new[] { "redir-host", "fake-ip" }.Select(mode => (Path.Combine(directory, DefaultRelativePath(mode)), DefaultBytes(mode))).ToArray();
     public static bool Enabled(JsonObject policy) => B(M(policy, "dns_privacy"), "enabled");
     public static string Exit(JsonObject policy)
     {
@@ -45,13 +55,20 @@ public static class DnsPrivacy
         "nameserver", A("https://1.1.1.1/dns-query#" + exit, "https://8.8.8.8/dns-query#" + exit));
 
     // Recovery remains available from the binary even when project inputs or generated files are broken.
-    public static string DefaultText() => "# MC2 1.2.2 ARM64 原装 Fake-IP DNS；仅恢复 DNS，不恢复节点或规则。\n"
-        + "# 来源：MC2_1.2.2_ARM64.tar.gz / merlinclash/yaml_dns/fakeip.yaml\n"
-        + "# 原始文件 SHA-256: " + OfficialSourceHash + "\n"
-        + "# 将全文（含 dns:）粘贴到 MC2 的“编辑 Fake-IP”，选择 Fake-IP，保存并重启。\n"
-        + "# 保留原装 geosite:gfw 引用，使用 MC2 自带 GeoSite.dat；不是新增下载的域名库。\n"
-        + BuiltInDefaults.Text("mc2-fakeip-default.yaml");
-    public static byte[] DefaultBytes() => Encoding.UTF8.GetBytes(DefaultText());
+    public static string DefaultText(string mode = "fake-ip")
+    {
+        _ = DefaultRelativePath(mode);
+        string title = mode == "fake-ip" ? "Fake-IP" : "Redir-Host";
+        string source = mode == "fake-ip" ? "fakeip" : "redirhost";
+        string hash = mode == "fake-ip" ? OfficialSourceHash : RedirHostSourceHash;
+        return $"# MC2 1.2.2 ARM64 原装 {title} DNS；仅恢复 DNS，不恢复节点或规则。\n"
+            + $"# 来源：MC2_1.2.2_ARM64.tar.gz / merlinclash/yaml_dns/{source}.yaml\n"
+            + "# 原始文件 SHA-256: " + hash + "\n"
+            + $"# 将全文（含 dns:）粘贴到 MC2 的“编辑 {title}”，选择 {title}，保存并重启。\n"
+            + "# 保留原装 geosite:gfw 引用，使用 MC2 自带 GeoSite.dat；不是新增下载的域名库。\n"
+            + BuiltInDefaults.Text($"mc2-{source}-default.yaml");
+    }
+    public static byte[] DefaultBytes(string mode = "fake-ip") => Encoding.UTF8.GetBytes(DefaultText(mode));
     public static string Guide(string stem, string mode) => $"""
         DNS 应用与恢复说明
 
@@ -71,13 +88,15 @@ public static class DnsPrivacy
 
         恢复 MC2 原装默认 DNS
         1. 在软件关闭“DNS 隐私增强”，保存并重新生成；订阅基线的主配置不再添加 dns。
-        2. 将 {stem}{DefaultSuffix} 全文粘贴到“DNS 设置 → 编辑 Fake-IP”。
-        3. 选择 Fake-IP，保存并重启 MC2；必要时重连设备或清理设备 DNS 缓存。
+        2. 根据要恢复的模式选择固定文件：{DefaultRelativePath("redir-host")} 或 {DefaultRelativePath("fake-ip")}。
+        3. 将所选文件全文（含 dns:）粘贴到“DNS 设置 → 编辑 Redir-Host”或“编辑 Fake-IP”，两者必须对应。
+        4. 选择对应的 Redir-Host 或 Fake-IP 模式，保存并重启 MC2；必要时重连设备或清理设备 DNS 缓存。
         仅重新导入主 YAML 不会撤销 MC2 已保存的增强 DNS。关闭增强后仍需完成上述恢复。
         若此前自行修改过 MC2 默认 DNS，应恢复步骤 1 中自己保存的文本。
         此恢复文件是 {OfficialVersion} 原装模板，不是任意版本通用的“官方默认”，也不是完整路由器或订阅配置备份。
         原装模板引用 geosite:gfw，依赖 MC2 原有 GeoSite.dat；增强方案没有增加域名库。
-        即使生成失败或文件被删除，也可在软件 DNS 输出页复制内置官方默认 DNS。
+        两份固定默认文件始终一起输出，与主配置文件名和增强开关无关；不要把两份内容合并使用。
+        即使生成失败或文件被删除，也可在软件 DNS 输出页选择模式并复制内置官方默认 DNS。
 
         增强方案边界
         代理 DNS 默认经过住宅出口；住宅选择链式路径时会经过机场入口。

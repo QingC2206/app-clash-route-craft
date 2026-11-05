@@ -169,7 +169,7 @@ public sealed class WorkspaceSession
         if (I(saved, "dns_artifacts_version", 0) != DnsPrivacy.ArtifactVersion) return OutputFreshness.InputsChanged;
         if (I(saved, "hosts_compiler_version", 0) != SubscriptionHosts.Version) return OutputFreshness.InputsChanged;
         if (I(saved, "project_ordering_version", 0) != ProjectOrdering.Version || I(saved, "geo_rules_version", 0) != GeoRules.Version || I(saved, "rule_compiler_version", 0) != Rules.Version) return OutputFreshness.InputsChanged;
-        if (SubscriptionBaseline.Enabled(Policy) && I(saved, "subscription_baseline_version", 0) != SubscriptionBaseline.Version) return OutputFreshness.InputsChanged;
+        if ((SubscriptionBaseline.Enabled(Policy) || SubscriptionBaseline.Primary(Settings) is null) && I(saved, "subscription_baseline_version", 0) != SubscriptionBaseline.Version) return OutputFreshness.InputsChanged;
         string mainHash = S(saved, "main_sha256"), dnsHash = S(M(saved, "dns"), "mc2_sha256");
         if (mainHash.Length == 0 || DependencySnapshot.FileHash(main) != mainHash || dnsHash.Length > 0 && DependencySnapshot.FileHash(Path.Combine(OutputPath, "HomeChain.MC2DNS.yaml")) != dnsHash) return OutputFreshness.InputsChanged;
         if (S(saved, "input_fingerprint") != InputFingerprint.Compute(ProjectPath) || !DependencySnapshot.RuleCachesCurrent(ProjectPath, saved)) return OutputFreshness.InputsChanged;

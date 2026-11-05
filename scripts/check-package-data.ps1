@@ -14,7 +14,7 @@ try {
     Write-Fixture 'workspace/docs/usage.md' 'test'
     Write-Fixture 'workspace/docs/validation.md' 'test'
     Write-Fixture 'workspace/THIRD-PARTY-NOTICES.md' 'test'
-    $publicDocuments = @('README.md','README.en.md','docs/router-asn.md','docs/releasing.md','docs/screenshots/README.md',
+    $publicDocuments = @('README.md','README.en.md','docs/router-asn.md','docs/rule-presets.md','docs/releasing.md','docs/screenshots/README.md',
         'docs/screenshots/overview.png','docs/screenshots/subscriptions.png','docs/screenshots/residential.png',
         'docs/screenshots/routing.png','docs/screenshots/custom-rules.png','docs/screenshots/dns-privacy.png','docs/screenshots/output.png')
     foreach ($name in $publicDocuments) { Write-Fixture "workspace/$name" "public fixture: $name" }

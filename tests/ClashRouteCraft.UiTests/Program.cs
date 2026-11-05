@@ -161,6 +161,11 @@ try
     Check(!NamedControl("PolicyTabBar").IsVisible, "Policy tabs leaked onto output pages");
     ((Expander)NamedControl("DefaultDnsPreview")).IsExpanded = true; Pump();
     Check(NamedControl("CopyDefaultDns").IsEnabled && ((AvaloniaEdit.TextEditor)NamedControl("DefaultDnsOutput")).Text == DnsPrivacy.DefaultText(), "Recovery unavailable with dirty project");
+    string recoveryDraft = window.Session.Documents["policy.yaml"].Text;
+    ((ComboBox)NamedControl("DefaultDnsMode")).SelectedIndex = 0; Pump();
+    Check(((AvaloniaEdit.TextEditor)NamedControl("DefaultDnsOutput")).Text == DnsPrivacy.DefaultText("redir-host") && NamedControl("CopyDefaultDns").IsEnabled, "Redir-Host recovery is unavailable");
+    ((ComboBox)NamedControl("DefaultDnsMode")).SelectedIndex = 1; Pump();
+    Check(((AvaloniaEdit.TextEditor)NamedControl("DefaultDnsOutput")).Text == DnsPrivacy.DefaultText() && window.Session.Documents["policy.yaml"].Text == recoveryDraft, "Recovery mode selection changed project DNS");
     AvaloniaHeadlessPlatform.ForceRenderTimerTick(2); using (var frame = window.CaptureRenderedFrame()) frame!.Save(Path.Combine(output, "dns-recovery.png"));
     window.Navigate("sources"); Pump();
     var entranceFilters = (Expander)NamedControl("SourceGlobalFilters"); entranceFilters.IsExpanded = true; Pump();
@@ -746,6 +751,7 @@ try
     window.Close(); Dispatcher.UIThread.RunJobs(); Check(!window.IsVisible, "Clean window did not close on the first attempt");
     FunctionalUiRegression.Run(workspace, output, Check);
     AsnUiRegression.Run(workspace, output, Check);
+    RulePresetUiRegression.Run(workspace, output, Check);
     Console.WriteLine($"RESULT {checks} UI checks passed; screenshots: {output}");
 }
 
