@@ -45,6 +45,39 @@ MC2 默认阻止尚未处理的 ASN 依赖，保留上次成功输出。检查�
 
 需要在目标路由器安装 `ASN.mmdb` 时，可单独运行 [跨平台 ASN 安装脚本](router-asn.md)。每次成功生成都会从内置资源输出到 `output/<项目名>/router-asn/`，包含 PowerShell、Linux / macOS 入口、共用 Python 脚本、README 和登录文件模板；无需源码仓库。可将模板复制为 `router-login.json`，在本机保存登录信息；该明文文件不应分享，Git 默认忽略，重新生成不会覆盖。先完成 SSH 认证，再下载、上传、摘要校验、备份和内核验证；不会自动导入项目或重启 MC2。
 
+<a id="openclash-geodata"></a>
+
+## OpenClash 数据库故障排查
+
+将主配置导入 OpenClash 后，如果内核启动失败、管理面板打不开，先查看 OpenClash 的运行日志。配置依赖的数据库需要在目标路由器上有效可用；电脑上生成、校验通过，不代表路由器已经准备好这些文件。
+
+### 根据日志选择更新项
+
+在 OpenClash 的 **GEO 数据库订阅** 页面，找到对应项目并点击“检查并更新”（不同版本的入口名称可能略有差异）：
+
+| 日志或规则依赖 | 页面中的更新项 | OpenClash 常用文件 |
+| --- | --- | --- |
+| `Can't find ASN.mmdb`、`ASN invalid`，或 `IP-ASN` / `SRC-IP-ASN` 规则加载失败 | Geo ASN 数据库 | `/etc/openclash/ASN.mmdb` |
+| `Can't find MMDB`、GeoIP MMDB 加载失败；使用 MMDB 模式的 `GEOIP` 规则 | GeoIP MMDB 数据库 | `/etc/openclash/Country.mmdb` |
+| `GeoIP.dat` 缺失或无效；使用 DAT 模式的 `GEOIP` 规则 | GeoIP Dat 数据库 | `/etc/openclash/GeoIP.dat` |
+| `GeoSite.dat` 缺失或无效；`GEOSITE` 或 DNS 中的 `geosite:` 依赖 | GeoSite 数据库 | `/etc/openclash/GeoSite.dat` |
+
+`geodata-mode: true` 对应 GeoIP DAT 模式，`false` 或未设置时默认使用 MMDB；应以 OpenClash **覆写后的运行配置**为准。Geo ASN 是独立依赖，更新 GeoIP MMDB 不能等同于更新 ASN。数据库只需按实际依赖准备，不必为了修复启动错误调整 DNS 模式或规则优先级。参见 [Mihomo GEO 配置](https://wiki.metacubex.one/config/general/)及 [OpenClash 启动脚本](https://github.com/vernesong/OpenClash/blob/master/luci-app-openclash/root/etc/init.d/openclash)。
+
+### 建议处理顺序
+
+1. 在日志中找首次 `error` / `fatal`，记录缺失或无效的数据库名称。`Parse config error: rules[...]` 后若紧跟数据库下载失败，应先处理该依赖，不能仅凭“规则解析错误”就认定 YAML 写法不兼容。
+2. 使用 OpenClash 自带更新入口更新对应数据库，查看更新结果。文件存在、大小非零或页面显示新时间，都不能单独证明内核可以读取它。
+3. 更新完成后重新启动 OpenClash，检查本次启动日志：确认内核运行、管理面板可访问，且没有新的数据库加载错误，再测试直连和代理访问。
+4. 若出现 `context deadline exceeded`，表示此次下载超时。检查路由器访问数据库下载地址是否正常，或在电脑下载并验证文件后离线安装。其他网址能打开，不代表该数据库下载地址也可访问。
+5. 数据库恢复后优先保留现有规则。确实无法准备 ASN 时，可在应用中按来源排除 ASN 并重新生成，但这会改变匹配结果，不应作为无提示的自动修复。
+
+曾有故障先报告找不到 ASN，随后报告 ASN 无效，两次自动下载均超时，导致内核退出；使用 OpenClash 的数据库更新入口后恢复。若一次操作更新了 MMDB、DAT 和 ASN 多项，不能仅凭恢复结果归因于其中一个按钮，应结合启动日志判断。
+
+OpenClash 优先使用自身的更新入口。现有 `router-asn` 脚本的默认目录和内核路径面向 MC2，不能直接沿用其默认安装命令；手工安装也应先核对 OpenClash 实际路径并备份旧文件。`HomeChain.MC2DNS.yaml` 和 `default/` 中的 DNS 恢复模板属于 MC2，不是 OpenClash 默认配置。
+
+排查仍未解决时，保存 OpenClash 版本、内核版本、生成文件头的程序版本，以及最近一次启动的错误日志。调试包可能包含订阅地址、节点凭据、面板认证和个人规则，分享前应脱敏，不要直接提交到公开仓库。
+
 ## 可选的 Fake-IP DNS 隐私增强
 
 在“规则与 DNS → DNS 策略”开启“DNS 隐私增强（Fake-IP）”，保存并重新生成即可。代理 DNS 默认经住宅出口，也可选择机场入口。没有所选出口时明确报错，不自动回退到直连。开关和出口跟随项目保存；默认关闭，旧项目不会自动迁移。原有 DNS 文本保留，关闭增强后恢复原模式。

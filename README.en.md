@@ -104,6 +104,12 @@ For MC2, ASN controls let you exclude ASN rules by source or explicitly retain t
 
 ASN tools support PowerShell and Linux / macOS terminals with Python 3.10+. They authenticate before downloading, upload over SSH, verify SHA-256, validate with the router's core, and support backups and rollback. They do not automatically restart MC2. SSH host records are isolated by project: different routers sharing a private IP do not interfere, but a changed key within one project is still rejected. See the [ASN setup guide (Chinese)](docs/router-asn.md).
 
+### When OpenClash fails to start
+
+For `Can't find ASN.mmdb`, `ASN invalid`, MMDB loading errors or database download timeouts, use OpenClash's **GEO database subscription** page to update the database named in the log: **Geo ASN / GeoIP MMDB / GeoIP Dat / GeoSite**. Restart and inspect the new core startup log. GeoIP and ASN are separate dependencies; an existing file or a new update timestamp does not prove that the core can load it. Local validation does not establish database readiness on the router.
+
+A reported startup failure was resolved by updating the target databases without changing business rules. See the [OpenClash database troubleshooting guide (Chinese)](docs/usage.md#openclash-geodata) for error mappings, recovery steps and the limits of MC2-specific tools. Debug exports may contain credentials; redact them before sharing.
+
 ## Upgrade without losing data
 
 1. Close ClashRouteCraft and back up your workspace.

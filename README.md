@@ -102,6 +102,12 @@ MC2 的 ASN 检查支持按来源排除 ASN 规则，或在目标设备准备好
 
 ASN 工具支持 PowerShell、Linux / macOS 终端，要求电脑具备 Python 3.10+。工具先鉴权再下载，经 SSH 上传并核对 SHA-256、调用路由器内核验证，支持备份和失败回滚，不自动重启 MC2。SSH 主机记录按项目隔离，同地址的不同路由器互不干扰，同一项目指纹变化仍会拒绝连接。详见 [ASN 安装指南](docs/router-asn.md)。
 
+### OpenClash 启动失败时
+
+若日志出现 `Can't find ASN.mmdb`、`ASN invalid`、MMDB 加载失败或数据库下载超时，先到 OpenClash 的 **GEO 数据库订阅** 页面，对照日志更新 **Geo ASN / GeoIP MMDB / GeoIP Dat / GeoSite**，再重启并检查本次内核日志。GeoIP 与 ASN 是不同依赖；文件存在或更新时间变化不等于已通过内核验证。本机校验成功也不代表路由器数据库齐全。
+
+已有案例在更新目标设备数据库后恢复，无需改动业务规则。完整步骤、错误对照及 MC2 工具边界见 [OpenClash 数据库故障排查](docs/usage.md#openclash-geodata)。
+
 ## 升级与数据保留
 
 1. 关闭正在使用的 ClashRouteCraft，备份自己的工作区。
