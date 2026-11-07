@@ -6,7 +6,7 @@ namespace ClashRouteCraft.Core;
 /// <summary>The first subscription supplies matches; actions use the unified routing model.</summary>
 public static class SubscriptionBaseline
 {
-    public const int Version = 7;
+    public const int Version = 8;
     public const string JumpInclude = "(?i)(香港|港|HK|Hong Kong|HongKong|🇭🇰|日本|东京|大阪|JP|Japan|Tokyo|Osaka|🇯🇵|台湾|台灣|台|台北|TW|Taiwan|Taipei|🇹🇼|新加坡|狮城|獅城|SG|Singapore|🇸🇬)";
     public const string JumpExclude = "(?i)官网|流量|过期|到期|重置|优选|群|TG|Static|静态|直连";
     public static string ChainedName(string name) => "[链式] " + name;
@@ -25,11 +25,12 @@ public static class SubscriptionBaseline
         var standalone = (JsonObject)policy.DeepClone();
         standalone["rule_source"] = "subscription";
         var expanded = ExpandPolicy(standalone);
-        if (policy.ContainsKey("final")) expanded["final"] = ExpandEnvironment(policy["final"]);
+        if (!StrictRouting.Enabled(policy) && policy.ContainsKey("final")) expanded["final"] = ExpandEnvironment(policy["final"]);
         return expanded;
     }
     public static string StandaloneFinal(JsonObject policy)
     {
+        if (StrictRouting.Enabled(policy)) return "PROXY";
         string action = S(policy, "final", "PROXY");
         if (action is not ("PROXY" or "DIRECT" or "REJECT")) throw new BuildException("无订阅模式的兜底动作请选择代理、直连或拒绝");
         return action;
@@ -43,7 +44,7 @@ public static class SubscriptionBaseline
     public static JsonObject ExpandPolicy(JsonObject policy)
     {
         if (!Enabled(policy)) return Map(ExpandEnvironment(policy), "policy");
-        var effective = O("rule_source", "subscription", "extra_rules_enabled", B(policy, "extra_rules_enabled", true));
+        var effective = O("rule_source", "subscription", "extra_rules_enabled", B(policy, "extra_rules_enabled", true), "strict_mode", StrictRouting.Enabled(policy));
         if (policy.ContainsKey("asn_policy")) effective["asn_policy"] = policy["asn_policy"]?.DeepClone();
         if (policy.ContainsKey("dns_privacy")) effective["dns_privacy"] = policy["dns_privacy"]?.DeepClone();
         if (B(effective, "extra_rules_enabled"))
@@ -61,7 +62,7 @@ public static class SubscriptionBaseline
 
     // Materialize node providers at pull time, but retain the original rule/group graph.
     // Groups using providers get explicit node lists, so the snapshot remains portable.
-    public static async Task<JsonObject> SnapshotAsync(JsonObject input, Fetcher fetch, string? baseDirectory, string label)
+    public static async Task<JsonObject> SnapshotAsync(JsonObject input, Fetcher fetch, string? baseDirectory, string label, bool prepareRules = true)
     {
         var doc = (JsonObject)input.DeepClone();
         var hosts = SubscriptionHosts.Normalize(M(doc, "hosts"), label);
@@ -112,7 +113,7 @@ public static class SubscriptionBaseline
         }
         // A remote rule provider is part of the subscription's own configuration. Local
         // file references cannot be copied to a router, so materialize text providers.
-        foreach (var (_, raw) in M(doc, "rule-providers"))
+        foreach (var (_, raw) in prepareRules ? M(doc, "rule-providers") : new JsonObject())
         {
             var provider = Map(raw, "订阅规则来源");
             if (S(provider, "type") != "file") continue;

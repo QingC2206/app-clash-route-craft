@@ -1,3 +1,5 @@
+# 严格模式：仅匹配个人规则，其余统一代理；默认关闭。
+strict_mode: false
 rule_source: subscription
 extra_rules_enabled: true
 dns_privacy:

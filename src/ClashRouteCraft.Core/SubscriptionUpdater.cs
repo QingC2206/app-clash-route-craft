@@ -8,10 +8,10 @@ public sealed record SubscriptionPullResult(string Name, int NodeCount, int Elig
 /// <summary>Fetches a single source without generating output or saving unrelated project editors.</summary>
 public static class SubscriptionUpdater
 {
-    public static async Task<JsonObject> DownloadDocumentAsync(Fetcher fetch, JsonObject source, string name, bool routing = true)
+    public static async Task<JsonObject> DownloadDocumentAsync(Fetcher fetch, JsonObject source, string name, bool routing = true, bool prepareRules = true)
     {
         var loaded = await fetch.ReadAsync(source, bytes => Nodes.Document(bytes), name);
-        var document = routing ? await SubscriptionBaseline.SnapshotAsync(Map(loaded.Value, name), fetch, loaded.Base, name)
+        var document = routing ? await SubscriptionBaseline.SnapshotAsync(Map(loaded.Value, name), fetch, loaded.Base, name, prepareRules)
             : await Nodes.CollectDocumentAsync(Map(loaded.Value, name), fetch, loaded.Base, name);
         var nodes = L(document, "proxies");
         if (nodes.Count == 0) throw new BuildException($"{name} 下载结果没有节点");
@@ -45,18 +45,22 @@ public static class SubscriptionUpdater
         string temporary = Path.Combine(Path.GetTempPath(), "homechain-pull-" + Guid.NewGuid().ToString("N"));
         string snapshot = session.SnapshotPath(name), expected = DependencySnapshot.FileHash(snapshot);
         string editor = session.Documents["settings.yaml"].Text, state = session.Subscriptions.Text;
-        bool baseline = false;
+        bool baseline = false, strict = false;
         // A standalone pull must remain available while unrelated policy YAML is being edited.
-        try { baseline = SubscriptionBaseline.Enabled(session.Policy); }
-        catch (BuildException) { try { baseline = SubscriptionBaseline.Enabled(Map(YamlData.Parse(session.Documents["policy.yaml"].Baseline), "policy")); } catch (BuildException) { } }
+        try { baseline = SubscriptionBaseline.Enabled(session.Policy); strict = StrictRouting.Enabled(session.Policy); }
+        catch (BuildException)
+        {
+            try { var savedPolicy = Map(YamlData.Parse(session.Documents["policy.yaml"].Baseline), "policy"); baseline = SubscriptionBaseline.Enabled(savedPolicy); strict = StrictRouting.Enabled(savedPolicy); }
+            catch (BuildException) { }
+        }
         JsonObject document;
         try
         {
             using (var lease = WorkspaceLease.Acquire(session.Workspace))
             using (var fetch = new Fetcher(session.ProjectPath, Merge(http, O("cache_dir", temporary, "allow_stale", false, "prefer_cache", false, "strict_subscriptions", true)), cancellation: cancellation, useCache: false))
-                document = await DownloadDocumentAsync(fetch, source, name, !baseline || SubscriptionBaseline.IsPrimary(session.Settings, name));
+                document = await DownloadDocumentAsync(fetch, source, name, !baseline || SubscriptionBaseline.IsPrimary(session.Settings, name), !strict);
             cancellation.ThrowIfCancellationRequested();
-            if (baseline && SubscriptionBaseline.IsPrimary(session.Settings, name)) SubscriptionBaseline.RequireRules(document, name);
+            if (baseline && !strict && SubscriptionBaseline.IsPrimary(session.Settings, name)) SubscriptionBaseline.RequireRules(document, name);
             var nodes = L(document, "proxies");
             int eligible = baseline ? SubscriptionBaseline.Eligible(nodes, source, selection).Count : Nodes.Eligible(Nodes.Namespace(nodes, name), source, selection).Count;
             if (session.Documents["settings.yaml"].Text != editor || session.Subscriptions.Text != state) throw new BuildException("拉取期间订阅设置已修改，本次结果未保存，请重试");

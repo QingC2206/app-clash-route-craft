@@ -17,10 +17,12 @@ public static class ProfileCompiler
         if (SubscriptionBaseline.Enabled(policy)) return await SubscriptionBaselineCompiler.CompileAsync(settings, policy, policyPath, fetch, cancellation);
         string geoMode = GeoRules.Mode(policy);
         ParameterInspection.ValidateRules(policy);
+        bool strict = StrictRouting.Enabled(policy);
         var asn = new AsnPolicy(policy);
         var residenceDoc = ExpandEnvironment(YamlData.Read(fetch.Resolve(S(settings, "residential_file", "residential.yaml"))));
         var residences = (JsonArray)List(residenceDoc is JsonObject residenceMap ? residenceMap["proxies"] : residenceDoc, "住宅节点").DeepClone();
         ValidateResidences(residences);
+        StrictRouting.RequireProxyResidences(residences, policy);
         foreach (var raw in residences) Map(raw, "住宅节点")["dialer-proxy"] = "机场入口";
         var selection = M(settings, "selection"); var sources = L(settings, "sources");
         var proxies = new JsonArray(); var sourceGroups = new JsonArray(); var summaries = new JsonArray(); var allEligible = new List<string>();
@@ -45,7 +47,7 @@ public static class ProfileCompiler
             catch (BuildException ex) when (S(source, "on_error", "abort") == "skip")
             { summaries.Push(O("source", name, "status", "skipped", "reason", ex.Message)); continue; }
             ConfigurationValidation.CacheNodes(nodes);
-            var eligible = Nodes.Eligible(nodes, source, selection);
+            var eligible = Nodes.Eligible(strict ? A(nodes.OfType<JsonObject>().Where(SubscriptionRouting.IsProxyNode).Select(x => (JsonNode?)x)) : nodes, source, selection);
             foreach (var node in nodes) proxies.Push(node?.DeepClone());
             allEligible.AddRange(eligible); if (!tiers.TryGetValue(priority, out var tier)) tiers[priority] = tier = []; tier.AddRange(eligible);
             sourceGroups.Push(Merge(O("name", "订阅·" + name, "type", "url-test", "proxies", eligible, "tolerance", tolerance), health));
@@ -55,7 +57,7 @@ public static class ProfileCompiler
         var tierGroups = new JsonArray();
         foreach (var (level, members) in tiers) tierGroups.Push(Merge(O("name", $"优先级·{level}", "type", "url-test", "proxies", members, "tolerance", tolerance), health));
         var groups = new JsonArray();
-        groups.Push(O("name", "默认代理", "type", "select", "proxies", A("住宅出口", "机场入口", "DIRECT")));
+        groups.Push(O("name", "默认代理", "type", "select", "proxies", strict ? A("住宅出口", "机场入口") : A("住宅出口", "机场入口", "DIRECT")));
         groups.Push(O("name", "住宅出口", "type", "select", "proxies", residences.Select(x => S(Map(x, "住宅"), "name"))));
         groups.Push(O("name", "机场入口", "type", "select", "proxies", new[] { "订阅优先", "机场手选" }.Concat(sourceGroups.Select(x => S(Map(x, "分组"), "name")))));
         groups.Push(Merge(O("name", "订阅优先", "type", "fallback", "proxies", tierGroups.Select(x => S(Map(x, "分组"), "name"))), health));
@@ -109,15 +111,17 @@ public static class ProfileCompiler
         number = 0;
         foreach (var raw in L(policy, "supplemental_rules")) { number++; var entry = Map(raw, "补充规则"); AddRule(Rules.WithAction(entry["match"], Action(entry["action"]), inputFormat: "match"), $"supplemental[{number}]", "supplemental"); }
         candidates = ProjectOrdering.OrderCustomRules(policy, candidates, entry => S(Map(entry, "自定义规则"), "rule"));
-        if (B(policy, "domestic_direct", true))
+        if (strict && candidates.Any(x => Rules.SplitFull(S(Map(x, "规则"), "rule"))[0] is "MATCH" or "FINAL")) throw new BuildException("严格模式的个人规则不能包含 MATCH / FINAL；未命中流量固定走代理");
+        if (!strict && B(policy, "domestic_direct", true))
             foreach (string rule in new[] { "GEOSITE,geolocation-!cn," + Action(JsonValue.Create("PROXY")), "GEOSITE,CN,DIRECT", "GEOIP,CN,DIRECT" }) AddRule(rule, "domestic", "baseline");
-        AddRule("MATCH," + Action(policy["final"]), "final", "final");
+        AddRule("MATCH," + Action(strict ? JsonValue.Create("PROXY") : policy["final"]), "final", "final");
         var (rules, mergeReport) = Rules.MergeRules(candidates);
         mergeReport["precedence"] = "user_groups_then_fallback";
         mergeReport["group_order"] = A(orderNames);
         var runtime = M(settings, "runtime");
         if (runtime.Any(x => new[] { "proxies", "proxy-providers", "proxy-groups", "rules", "rule-providers" }.Contains(x.Key))) throw new BuildException("runtime 不能覆盖生成器管理的代理、分组和规则字段");
         var configuration = Merge(O("mixed-port", 7890, "allow-lan", false, "mode", "rule", "log-level", "info", "ipv6", false, "geodata-mode", true, "geodata-loader", "memconservative", "profile", O("store-selected", true)), runtime);
+        StrictRouting.RequireRuleMode(configuration, policy);
         foreach (var residence in residences) proxies.Push(residence?.DeepClone());
         configuration["proxies"] = proxies; configuration["proxy-groups"] = groups; configuration["rules"] = rules;
         SubscriptionHosts.Apply(configuration, hosts, "订阅");
@@ -143,6 +147,8 @@ public static class ProfileCompiler
             "selection", "priority tiers: url-test; tiers: fallback", "contains_subscription_urls", false,
             "dns", O("configured", configuration.ContainsKey("dns"), "enabled", B(M(configuration, "dns"), "enable"), "source", dnsExit.Length > 0 ? "privacy" : "policy.yaml", "proxy_exit", dnsExit, "proxy_references", references));
         if (dnsRouting is not null) report["dns_routing"] = dnsRouting;
+        report["strict_mode"] = strict;
+        if (strict) M(report, "rule_merge")["precedence"] = "user_groups_then_proxy";
         report["asn"] = asn.Report(configuration, ConfigurationValidation.Target(settings));
         return new(configuration, report);
     }

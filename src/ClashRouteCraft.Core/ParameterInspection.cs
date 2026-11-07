@@ -58,6 +58,7 @@ public static class ParameterInspection
     public static void ValidateRules(JsonObject policy, ISet<string>? actions = null, ISet<string>? deferredPrefixes = null)
     {
         AsnPolicy.Validate(policy);
+        bool strict = StrictRouting.Enabled(policy);
         bool baseline = SubscriptionBaseline.Enabled(policy);
         if (baseline && !B(policy, "extra_rules_enabled", true)) return;
         ProjectOrdering.RuleOrder(policy); if (!baseline) GeoRules.Mode(policy);
@@ -85,7 +86,7 @@ public static class ParameterInspection
             if ((S(remote, "url").Length > 0) == (S(remote, "file").Length > 0)) throw new BuildException("远程名单必须且只能指定 URL 或文件之一");
             ConfigurationValidation.Headers(remote);
         }
-        if (!baseline) { B(policy, "domestic_direct", true); Action(S(policy, "final", "PROXY")); }
+        if (!baseline && !strict) { B(policy, "domestic_direct", true); Action(S(policy, "final", "PROXY")); }
     }
     public static IEnumerable<ParameterCheck> Inspect(WorkspaceSession session, CancellationToken cancellation = default, BuildOptions? build = null, bool checkDependencies = true)
     {
@@ -165,6 +166,7 @@ public static class ParameterInspection
         }
         if (subscriptionBaseline) yield return Evaluate("订阅规则基线", "sources", "AddSource", () =>
         {
+            if (StrictRouting.Enabled(policy)) return ("严格模式：仅使用启用的个人规则，未命中统一代理；订阅仅提供节点及连接依赖", false);
             if (standalone) { SubscriptionBaseline.StandaloneFinal(policy); return ("无订阅：使用个人规则及所选兜底动作", false); }
             var ordered = (JsonObject)settings.DeepClone(); ProjectOrdering.NumberSources(ordered);
             var primary = SubscriptionBaseline.Primary(ordered) ?? throw new BuildException("至少启用一个订阅");
@@ -224,6 +226,7 @@ public static class ParameterInspection
         yield return Evaluate("分流规则 · 顺序与动作", "policy", "FinalAction", () =>
         {
             ValidateRules(policy, actions, deferred);
+            StrictRouting.RequireRuleMode(M(settings, "runtime"), policy);
             return ("规则优先级、前置规则、默认动作和远程来源格式通过", false);
         });
         yield return Evaluate(RemoteContentTitle, "policy", "RemoteUrls_proxy", () =>

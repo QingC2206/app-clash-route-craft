@@ -90,7 +90,7 @@ public static class ConfigurationValidation
             var known = new List<string>();
             foreach (string group in new[] { "direct", "reject", "proxy" }) known.AddRange(L(policy, group).Select(x => Rules.WithAction(x, "DIRECT")));
             foreach (var first in L(policy, "first")) known.Add(Rules.WithAction(Map(first, "前置规则")["match"], "DIRECT", inputFormat: "match"));
-            if (B(policy, "domestic_direct", true)) known.AddRange(["GEOSITE,CN,DIRECT", "GEOIP,CN,DIRECT"]);
+            if (!StrictRouting.Enabled(policy) && B(policy, "domestic_direct", true)) known.AddRange(["GEOSITE,CN,DIRECT", "GEOIP,CN,DIRECT"]);
             var config = Merge(O("geodata-mode", true), M(settings, "runtime")); config["rules"] = A(known);
             config["dns"] = DnsPrivacy.Enabled(policy) ? DnsPrivacy.Create("住宅出口") : policy["dns"]?.DeepClone();
             foreach (string file in GeoRules.RequiredDatabases(config))

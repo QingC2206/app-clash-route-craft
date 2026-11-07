@@ -45,6 +45,16 @@ static class RulePresetUiRegression
         File.WriteAllText(file, "version: 999\npresets: []\n"); Click(dialog, "ReloadRulePresets");
         check(!Named<Button>(dialog, "ConfirmRulePresets").IsEnabled && Named<TextBlock>(dialog, "PresetStatus").Text!.Contains("加载失败"), "Invalid catalogue could apply stale selection");
         Click(dialog, "CancelRulePresets"); File.WriteAllText(file, factory);
+        var savedPolicy = window.Session.Policy; savedPolicy["final"] = "DIRECT"; window.Session.Documents["policy.yaml"].Set(savedPolicy);
+        window.Navigate("policy"); Pump();
+        string strictBefore = Canonical(window.Session.Policy);
+        check(Named<CheckBox>(window, "StrictMode").IsChecked == false, "Strict enabled by default");
+        Named<CheckBox>(window, "StrictMode").IsChecked = true; Pump();
+        check(B(window.Session.Policy, "strict_mode") && !window.GetVisualDescendants().OfType<ComboBox>().Any(x => x.Name == "FinalAction"), "Strict toggle did not lock fallback");
+        check(S(window.Session.Policy, "final") == "DIRECT" && Canonical(window.Session.Settings) == originalSettings && Canonical(window.Session.Residences) == residences, "Strict toggle changed saved fallback or connection settings");
+        using (var frame = window.CaptureRenderedFrame()) frame!.Save(Path.Combine(output, "strict-mode.png"));
+        Named<CheckBox>(window, "StrictMode").IsChecked = false; Pump();
+        check(Named<ComboBox>(window, "FinalAction").SelectedIndex == 1 && Canonical(window.Session.Policy) == strictBefore, "Strict toggle off did not restore original settings");
         window.Session.Save(); window.Navigate("residential"); Pump();
         check(window.GetVisualDescendants().OfType<TextBlock>().Any(x => x.Text?.Contains("仅生成“[直连]") == true), "Standalone residence instructions missing");
         window.Close(); Pump();

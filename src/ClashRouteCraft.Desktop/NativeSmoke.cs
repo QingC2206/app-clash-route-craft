@@ -117,6 +117,15 @@ internal static class NativeSmoke
         var config = Map(YamlData.Read(result.OutputPath), "output");
         if (Canonical(config).Contains("机场入口") || Canonical(config).Contains("dialer-proxy") || L(config, "proxies").Count != 1
             || S(L(config, "rules").Last()) != "MATCH,代理出口" || S(M(result.Report, "dns"), "proxy_exit") != "住宅出口") throw new BuildException("无订阅住宅直连原生生成失败");
+        var strictPolicy = session.Policy; strictPolicy["strict_mode"] = true; strictPolicy["final"] = "DIRECT";
+        session.Documents["policy.yaml"].Set(strictPolicy); session.Save();
+        var strict = await new BuildEngine().BuildProjectAsync(workspace, session.ProjectName, new(Offline: true));
+        if (!B(strict.Report, "strict_mode") || S(L(Map(YamlData.Read(strict.OutputPath), "output"), "rules").Last()) != "MATCH,代理出口") throw new BuildException("严格模式原生生成失败");
+        var subscription = new WorkspaceSession(workspace, "EntranceSmoke");
+        var subscriptionPolicy = subscription.Policy; subscriptionPolicy["strict_mode"] = true; subscriptionPolicy["extra_rules_enabled"] = false;
+        subscription.Documents["policy.yaml"].Set(subscriptionPolicy); subscription.Save();
+        var strictSubscription = await new BuildEngine().BuildProjectAsync(workspace, subscription.ProjectName, new(Offline: true));
+        if (Canonical(Map(YamlData.Read(strictSubscription.OutputPath), "output")["rules"]) != Canonical(A("MATCH,代理出口"))) throw new BuildException("严格模式未跳过订阅规则");
     }
     static async Task CheckAsnPolicy(string workspace)
     {

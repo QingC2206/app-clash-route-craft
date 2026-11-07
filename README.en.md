@@ -26,6 +26,12 @@ Mihomo validation binaries and GeoData are not bundled; download optional resour
 
 ## Core features
 
+### Optional strict mode
+
+Enable **严格模式 (Strict mode)** under routing. Enabled personal rules retain their group order and direct/proxy/block actions; unmatched traffic always uses the proxy exit. Subscription rules (including ad blocking and direct fallbacks) and automatic domestic routing are skipped, while nodes, hosts and transport dependencies are retained. Add any required blocking lists to personal rules. With personal rules disabled, all handled traffic uses the proxy exit.
+
+Off by default; save and regenerate to apply. Turning it off restores the previous rule source and fallback. Works with subscriptions or residential-only projects; a nodes-only primary subscription is sufficient in strict mode. DNS, UDP interception and QUIC settings are unchanged. This only controls traffic handled by the core in rule mode, not traffic during router startup or shutdown.
+
 ### Editable rule presets
 
 Under routing, select **添加规则预设 (Add rule presets)**, choose one or more entries, select direct/proxy/block, and confirm. Entries are appended to the existing rule groups; same-group duplicates are skipped, and cross-group conflicts keep the existing group priority. Save and regenerate to apply. Subscription, node and DNS settings stay intact.

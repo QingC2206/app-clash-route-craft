@@ -8,6 +8,7 @@ public static class SubscriptionBaselineCompiler
     public static async Task<CompiledProfile> CompileAsync(JsonObject settings, JsonObject policy, string policyPath, Fetcher fetch, CancellationToken cancellation)
     {
         ParameterInspection.ValidateRules(policy);
+        bool strict = StrictRouting.Enabled(policy);
         var asn = new AsnPolicy(policy);
         var primary = SubscriptionBaseline.Primary(settings);
         bool standalone = primary is null;
@@ -18,9 +19,13 @@ public static class SubscriptionBaselineCompiler
         if (primary is not null)
         {
             var read = await fetch.ReadAsync(primary, Nodes.Document, primaryName);
-            original = await SubscriptionBaseline.SnapshotAsync(Map(read.Value, "订阅"), fetch, read.Base, primaryName);
-            SubscriptionBaseline.RequireRules(original, primaryName);
-            await asn.InspectDocumentAsync(original, AsnPolicy.SubscriptionId(primaryName), "主订阅 · " + primaryName, fetch, read.Base);
+            var document = Map(read.Value, "订阅");
+            original = await SubscriptionBaseline.SnapshotAsync(strict ? StrictRouting.WithoutSubscriptionRules(document) : document, fetch, read.Base, primaryName);
+            if (!strict)
+            {
+                SubscriptionBaseline.RequireRules(original, primaryName);
+                await asn.InspectDocumentAsync(original, AsnPolicy.SubscriptionId(primaryName), "主订阅 · " + primaryName, fetch, read.Base);
+            }
         }
         int originalRuleCount = SubscriptionBaseline.RuleCount(original);
         var routing = new SubscriptionRouting(original);
@@ -28,6 +33,7 @@ public static class SubscriptionBaselineCompiler
         var runtime = M(settings, "runtime");
         if (runtime.Any(x => new[] { "dns", "proxies", "proxy-providers", "proxy-groups", "rules", "rule-providers", "sub-rules" }.Contains(x.Key))) throw new BuildException("runtime 不能覆盖订阅基线管理的字段");
         configuration = Merge(configuration, runtime);
+        StrictRouting.RequireRuleMode(configuration, policy);
         SubscriptionHosts.Apply(configuration, M(original, "hosts"), primaryName);
         foreach (string key in new[] { "proxies", "proxy-groups", "rules", "rule-providers", "sub-rules", "geodata-mode", "geodata-loader", "geox-url", "profile" })
             if (original.ContainsKey(key)) configuration[key] = original[key]?.DeepClone();
@@ -46,7 +52,7 @@ public static class SubscriptionBaselineCompiler
             var eligible = SubscriptionBaseline.Eligible(nodes, source, selection, prefix);
             jumpCandidates.AddRange(eligible);
             sourceCandidates.Add((name, eligible));
-            summaries.Push(O("source", name, "priority", I(source, "priority", 100), "nodes", nodes.Count, "eligible", eligible.Count, "rules_used", source == primary));
+            summaries.Push(O("source", name, "priority", I(source, "priority", 100), "nodes", nodes.Count, "eligible", eligible.Count, "rules_used", !strict && source == primary));
         }
         if (primary is not null) CollectCandidates(primary, proxies);
         foreach (var source in sources.Skip(1))
@@ -68,6 +74,7 @@ public static class SubscriptionBaselineCompiler
         var residenceDoc = ExpandEnvironment(YamlData.Read(fetch.Resolve(S(settings, "residential_file", "residential.yaml"))));
         var residences = (JsonArray)List(residenceDoc is JsonObject map ? map["proxies"] : residenceDoc, "住宅节点").DeepClone();
         if (residences.Count > 0) ProfileCompiler.ValidateResidences(residences);
+        StrictRouting.RequireProxyResidences(residences, policy);
         if (standalone && residences.Count == 0) throw new BuildException("没有启用订阅时，请至少添加一个可直接连接的住宅代理");
         // Reserve old residential action names before allocating generated groups.
         // Existing user rules can keep referring to the unprefixed residential name.
@@ -155,14 +162,14 @@ public static class SubscriptionBaselineCompiler
         int extraCount = rules.Count;
         if (rules.Any(x => Rules.SplitFull(S(x))[0] is "MATCH" or "FINAL")) throw new BuildException("附加规则不能使用 MATCH / FINAL 覆盖整个订阅，请删除或停用附加兜底规则");
         foreach (var rule in routing.Rewrite(originalRules, defaultProxy)) rules.Add(rule?.DeepClone());
-        if (standalone) rules.Push(JsonValue.Create("MATCH," + Action(JsonValue.Create(SubscriptionBaseline.StandaloneFinal(policy)))));
+        if (strict || standalone) rules.Push(JsonValue.Create("MATCH," + (strict ? defaultProxy : Action(JsonValue.Create(SubscriptionBaseline.StandaloneFinal(policy))))));
         configuration["rules"] = rules;
         if (original.ContainsKey("sub-rules")) configuration["sub-rules"] = routing.RewriteSubRules(defaultProxy);
         foreach (var provider in M(configuration, "rule-providers").Select(x => Map(x.Value, "规则来源")))
             if (S(provider, "proxy") is { Length: > 0 } action) provider["proxy"] = routing.Action(action, defaultProxy);
         string dnsExit = DnsPrivacy.Apply(configuration, policy, residences.Count > 0 ? residential : "", jumpCandidates.Count > 0 ? airport : "");
         var report = O("built_at", DateTimeOffset.UtcNow.ToString("O"), "sources", summaries, "fetches", fetch.Events,
-            "rule_source", standalone ? "residential" : "subscription", "subscription_baseline_version", SubscriptionBaseline.Version, "baseline_source", primaryName,
+            "strict_mode", strict, "rule_source", standalone ? "residential" : "subscription", "subscription_baseline_version", SubscriptionBaseline.Version, "baseline_source", primaryName,
             "baseline_rule_count", originalRuleCount, "baseline_entry_count", originalRules.Count, "extra_rule_count", extraCount,
             "routing_model", "direct_proxy_reject", "subscription_action_mapping", routing.Mapping(defaultProxy), "hosts_compiler_version", SubscriptionHosts.Version,
             "jump_group", jumpCandidates.Count > 0 ? airport : "", "jump_candidates", jumpCandidates.Count, "residential_group", residences.Count > 0 ? residential : "",
@@ -172,7 +179,7 @@ public static class SubscriptionBaselineCompiler
             "geo_mode", "subscription", "required_geodata", GeoRules.RequiredDatabases(configuration),
             "proxy_count", proxies.Count, "rule_count", SubscriptionBaseline.RuleCount(configuration), "contains_subscription_urls", false,
             "dns", O("configured", dnsExit.Length > 0, "enabled", dnsExit.Length > 0, "source", dnsExit.Length > 0 ? "privacy" : "client", "proxy_exit", dnsExit, "proxy_references", ProfileCompiler.ValidateDns(configuration)),
-            "rule_merge", O("precedence", "user_groups_then_primary_subscription", "group_order", B(policy, "extra_rules_enabled", true) ? A(ProjectOrdering.RuleOrder(policy)) : new JsonArray(), "input_count", rules.Count, "duplicates_removed", 0));
+            "rule_merge", O("precedence", strict ? "user_groups_then_proxy" : "user_groups_then_primary_subscription", "group_order", B(policy, "extra_rules_enabled", true) ? A(ProjectOrdering.RuleOrder(policy)) : new JsonArray(), "input_count", rules.Count, "duplicates_removed", 0));
         report["asn"] = asn.Report(configuration, ConfigurationValidation.Target(settings));
         return new(configuration, report);
     }

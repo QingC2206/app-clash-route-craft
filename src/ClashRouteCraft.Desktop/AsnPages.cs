@@ -19,7 +19,7 @@ public sealed partial class MainWindow
             Mutate("policy.yaml", doc => { doc["asn_policy"] ??= new JsonObject(); M(doc, "asn_policy")["allow_native"] = value; }); RenderPage();
         });
         retain.Name = "AllowNativeAsn"; retain.IsEnabled = !IsBusy && !session.IsReadOnly;
-        string summary = inspection is null ? "尚未检查。生成时会检查主订阅、手工及附加规则；MC2 默认阻止未经处理的 ASN 依赖。"
+        string summary = inspection is null ? (StrictRouting.Enabled(policy) ? "严格模式仅检查启用的个人规则；不引入主订阅的 ASN 依赖。MC2 默认阻止未经处理的 ASN 依赖。" : "尚未检查。生成时会检查主订阅、手工及附加规则；MC2 默认阻止未经处理的 ASN 依赖。")
             : $"最近检查：ASN {L(inspection, "sources").OfType<JsonObject>().Sum(x => I(x, "detected", 0))} 条，已排除 {I(inspection, "excluded_rules", 0)} 条，未检查远程规则集 {I(inspection, "uninspected_providers", 0)} 个。修改后请重新检查或生成。";
         var rows = Stack(Label(summary, true, UiMetrics.Supporting), Row(check), retain,
             Label("检查会保存草稿，不替换生成文件。排除会移除整条含 ASN 的规则，可能改变直连、代理或拦截结果；其他规则顺序不变。选择只在保存、生成后生效。", true, UiMetrics.Supporting));

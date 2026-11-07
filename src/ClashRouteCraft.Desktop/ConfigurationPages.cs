@@ -136,8 +136,8 @@ public sealed partial class MainWindow
         bool nodesOnly = UsesSubscriptionBaseline() && !SubscriptionBaseline.IsPrimary(session.Settings, name);
         if (nodesOnly) document = SubscriptionHosts.NodeDocument(document, L(document, "proxies"), name);
         using (var fetch = new Fetcher(Path.GetDirectoryName(path)!, O("cache_dir", Path.Combine(session.Workspace, ".cache")), offline: true))
-            document = await SubscriptionBaseline.SnapshotAsync(document, fetch, Path.GetDirectoryName(path), name);
-        if (UsesSubscriptionBaseline() && SubscriptionBaseline.IsPrimary(session.Settings, name)) SubscriptionBaseline.RequireRules(document, name);
+            document = await SubscriptionBaseline.SnapshotAsync(document, fetch, Path.GetDirectoryName(path), name, !StrictRouting.Enabled(session.Policy));
+        if (UsesSubscriptionBaseline() && !StrictRouting.Enabled(session.Policy) && SubscriptionBaseline.IsPrimary(session.Settings, name)) SubscriptionBaseline.RequireRules(document, name);
         var effective = ConfigurationValidation.ExpandSettings(session.Settings);
         if (UsesSubscriptionBaseline()) SubscriptionBaseline.Eligible(L(document, "proxies"), Map(L(effective, "sources")[index], "订阅"), M(effective, "selection"));
         else Nodes.Eligible(Nodes.Namespace(L(document, "proxies"), name), Map(L(effective, "sources")[index], "订阅"), M(effective, "selection"));
@@ -221,14 +221,20 @@ public sealed partial class MainWindow
         policyTabsHost.Content = toolbar; policyTabsHost.IsVisible = true;
         if (policyTab == "dns") return DnsForm();
         var useSubscription = Check("使用第一个启用订阅的规则（推荐）", baseline, value => { Mutate("policy.yaml", doc => doc["rule_source"] = value ? "subscription" : "custom"); RenderPage(); }); useSubscription.Name = "UseSubscriptionBaseline";
-        useSubscription.IsEnabled = !ResidentialOnly();
-        if (ResidentialOnly()) return Stack(Card("无订阅 · 住宅直连", Label("使用个人自定义规则及下方兜底动作，不引入额外域名库。添加并启用订阅后，可恢复使用主订阅规则。DNS 默认由客户端管理。", true, 13)), AsnPolicyCard(), policyTab == "sets" ? RuleSetsForm() : RuleForms());
+        bool strict = StrictRouting.Enabled(session!.Policy);
+        useSubscription.IsEnabled = !ResidentialOnly() && !strict;
+        var strictSwitch = Check("严格模式 · 未命中个人规则的流量全部代理", strict, value => { Mutate("policy.yaml", doc => doc["strict_mode"] = value); RenderPage(); }); strictSwitch.Name = "StrictMode";
+        var strictCard = Card("严格模式", strictSwitch,
+            Label("开启后按下方组顺序匹配已启用的个人规则（域名、URL、导入规则）；其余统一走代理出口。跳过订阅规则和国内默认直连，关闭后恢复原设置。", true, 12),
+            Label("默认关闭。保存并重新生成后生效；只控制进入内核的流量，不改变 DNS、UDP 接管或 QUIC，也不提供路由器停机保护。", true, 12));
+        if (ResidentialOnly()) return Stack(strictCard, Card("无订阅 · 住宅直连", Label("使用个人自定义规则及下方兜底动作，不引入额外域名库。添加并启用订阅后，可恢复使用主订阅规则。DNS 默认由客户端管理。", true, 13)), AsnPolicyCard(), policyTab == "sets" ? RuleSetsForm() : RuleForms());
         var ordered = (JsonObject)session!.Settings.DeepClone(); ProjectOrdering.NumberSources(ordered);
         string source = SubscriptionBaseline.Primary(ordered) is { } primary ? S(primary, "name") : "尚未启用订阅";
-        return Stack(Card("规则来源", useSubscription, Label(baseline ? $"当前来源：{source}。使用该订阅的匹配条件和顺序，动作归并为三类；其他订阅只提供节点。自定义规则优先于订阅规则，无需再次导入规则集。" : "当前使用旧的自定义编排。勾选上方即可切换到订阅基线；保留现有配置内容，保存并重新生成后生效。", true, 13)), AsnPolicyCard(), policyTab == "sets" ? RuleSetsForm() : RuleForms());
+        return Stack(strictCard, Card("规则来源", useSubscription, Label(strict ? "严格模式已开启：所有订阅仅提供节点及连接依赖，不使用订阅中的直连、代理、拦截或兜底规则。原规则来源选择已保留。" : baseline ? $"当前来源：{source}。使用该订阅的匹配条件和顺序，动作归并为三类；其他订阅只提供节点。自定义规则优先于订阅规则，无需再次导入规则集。" : "当前使用旧的自定义编排。勾选上方即可切换到订阅基线；保留现有配置内容，保存并重新生成后生效。", true, 13)), AsnPolicyCard(), policyTab == "sets" ? RuleSetsForm() : RuleForms());
     }
     Control UnifiedRoutingOverview()
     {
+        if (StrictRouting.Enabled(session!.Policy)) return Card("三类分流 · 严格模式", Label("个人规则按组顺序匹配：本地直连 → 当前网络；代理 → 统一代理出口；拦截 → 拒绝连接。未命中 → 统一代理出口。", true, 12));
         if (ResidentialOnly()) return Card("三类分流", Label("本地直连 → 当前网络；代理 → 住宅出口 → [直连] 住宅节点；拦截 → 拒绝连接。", true, 12), Label("按下方组顺序匹配个人规则，未命中时使用兜底动作。不会创建机场入口，也不会自动降级为网站直连。", true, 12));
         var help = Label("优先顺序：自定义规则 → 主订阅规则。订阅内部保持原顺序，只归并动作。代理业务统一使用“代理出口”，有住宅时默认住宅，否则使用机场入口。", true, 12); help.Name = "UnifiedRoutingHelp";
         var card = Card("三类分流", help,
@@ -289,7 +295,7 @@ public sealed partial class MainWindow
             content.Children.Add(UnifiedRoutingOverview());
             var extras = Check("启用个人附加规则", B(policy, "extra_rules_enabled", true), value => { Mutate("policy.yaml", doc => doc["extra_rules_enabled"] = value); RenderPage(); }); extras.Name = "EnableExtraRules";
             content.Children.Add(extras);
-            if (!B(policy, "extra_rules_enabled", true)) content.Children.Add(Note(ResidentialOnly() ? "个人规则已停用，仅使用下方兜底动作。" : "附加规则已停用，内容仍保留。当前完全使用主订阅规则；可随时重新启用。"));
+            if (!B(policy, "extra_rules_enabled", true)) content.Children.Add(Note(StrictRouting.Enabled(policy) ? "个人规则已停用，严格模式下全部流量使用代理出口；重新启用后个人例外才会生效。" : ResidentialOnly() ? "个人规则已停用，仅使用下方兜底动作。" : "附加规则已停用，内容仍保留。当前完全使用主订阅规则；可随时重新启用。"));
         }
         string GroupName(string group) => group switch { "direct" => baseline ? "本地直连" : "直连", "reject" => "拦截", _ => "代理" };
         var orderHint = Label("按组从上到下匹配：上一组的全部规则优先于下一组，包含手工、URL 和已导入规则。", true, 12); orderHint.Name = "RuleOrderHint";
@@ -317,9 +323,15 @@ public sealed partial class MainWindow
         }
         policyFocusField = "";
         content.Children.Add(groups); int advanced = remotes.Count(x => !ProjectOrdering.IsUrlEntry(x)); if (advanced > 0) content.Children.Add(Label($"另有 {advanced} 条高级来源，保留在高级 YAML 中维护。", true, 12));
+        if (baseline) groups.IsEnabled = B(policy, "extra_rules_enabled", true);
+        if (StrictRouting.Enabled(policy))
+        {
+            ToolTip.SetTip(orderHint, "按组顺序匹配已启用的个人规则，随后固定走代理。跳过订阅规则和国内默认直连。");
+            content.Children.Add(Note("严格模式：未命中固定走代理出口，不自动回退直连。原兜底动作及国内默认直连设置保留，关闭严格模式后恢复。"));
+            return content;
+        }
         if (baseline)
         {
-            groups.IsEnabled = B(policy, "extra_rules_enabled", true);
             if (ResidentialOnly())
             {
                 var choices = new[] { ("PROXY", "代理 · 使用住宅出口"), ("DIRECT", "直连 · 使用当前网络"), ("REJECT", "拒绝 · 阻止连接") }.Select(x => new ComboBoxItem { Tag = x.Item1, Content = x.Item2 }).ToList();

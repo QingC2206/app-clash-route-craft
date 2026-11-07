@@ -63,8 +63,8 @@ public sealed class BuildEngine
                 {
                     try
                     {
-                        var document = await SubscriptionUpdater.DownloadDocumentAsync(fetch, source, name, !SubscriptionBaseline.Enabled(currentSession.Policy) || SubscriptionBaseline.IsPrimary(settings, name));
-                        if (SubscriptionBaseline.Enabled(currentSession.Policy) && SubscriptionBaseline.IsPrimary(settings, name)) SubscriptionBaseline.RequireRules(document, name);
+                        var document = await SubscriptionUpdater.DownloadDocumentAsync(fetch, source, name, !SubscriptionBaseline.Enabled(currentSession.Policy) || SubscriptionBaseline.IsPrimary(settings, name), !StrictRouting.Enabled(currentSession.Policy));
+                        if (SubscriptionBaseline.Enabled(currentSession.Policy) && !StrictRouting.Enabled(currentSession.Policy) && SubscriptionBaseline.IsPrimary(settings, name)) SubscriptionBaseline.RequireRules(document, name);
                         var nodes = L(document, "proxies");
                         if (SubscriptionBaseline.Enabled(currentSession.Policy)) SubscriptionBaseline.Eligible(nodes, source, M(settings, "selection"));
                         else Nodes.Eligible(Nodes.Namespace(nodes, name), source, M(settings, "selection"));

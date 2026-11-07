@@ -7,7 +7,7 @@ namespace ClashRouteCraft.Core;
 /// <summary>Workspace-level routing template; never copies DNS, subscriptions or credentials.</summary>
 public static class RuleDefaults
 {
-    static readonly string[] Keys = ["rule_source", "extra_rules_enabled", "first", "order", "direct", "reject", "proxy", "remote_rules", "supplemental_rules", "rule_sets", "domestic_direct", "final", "geo_mode", "geosite_sources", "asn_sources", "asn_policy"];
+    static readonly string[] Keys = ["strict_mode", "rule_source", "extra_rules_enabled", "first", "order", "direct", "reject", "proxy", "remote_rules", "supplemental_rules", "rule_sets", "domestic_direct", "final", "geo_mode", "geosite_sources", "asn_sources", "asn_policy"];
     public static string FilePath(string workspace) => Path.Combine(Path.GetFullPath(workspace), "settings", "rule-defaults.yaml");
     public static JsonObject Extract(JsonObject policy)
     {
@@ -22,7 +22,7 @@ public static class RuleDefaults
         foreach (string key in Keys)
         {
             // Older saved templates never selected a compiler mode or an extras switch.
-            if (key is "rule_source" or "extra_rules_enabled" && !defaults.ContainsKey(key)) continue;
+            if (key is "strict_mode" or "rule_source" or "extra_rules_enabled" && !defaults.ContainsKey(key)) continue;
             result.Remove(key); if (defaults.ContainsKey(key)) result[key] = defaults[key]?.DeepClone();
         }
         return result;
