@@ -94,7 +94,8 @@ static class AsnPolicyRegression
             using var f = new Fixture(); using var server = new LocalServer { Body = "payload:\n- IP-ASN,64512\n- DOMAIN,keep.example\n" }; Baseline(f);
             var doc = Primary(f, "RULE-SET,remote,Original", "MATCH,Original");
             doc["rule-providers"] = O("remote", O("type", "http", "behavior", "classical", "url", server.Url, "path", "./rules/remote.yaml", "interval", 86400)); f.Write("subscrip/A.yaml", doc);
-            var failure = await Blocked(() => Build(f)); Check(I(failure.Analysis, "uninspected_providers", 0) == 1 && server.Requests == 0, "Unknown provider should be explicit");
+            using (var fetch = new Fetcher(f.Project, Merge(M(Map(YamlData.Read(f.Settings), "s"), "http"), O("cache_dir", Path.Combine(f.Root, ".cache", "SampleOne"))))) await fetch.ReadAsync(O("url", server.Url), bytes => Rules.ParseRemote(bytes, O()), "seed provider");
+            var failure = await Blocked(() => Build(f)); Check(I(failure.Analysis, "uninspected_providers", 0) == 1 && server.Requests == 1, "Unknown provider should be explicit");
             var p = Policy(f); p["asn_policy"] = O("allow_native", true); f.Write("policy.yaml", p);
             var retained = await Build(f); Check(S(M(retained.Report, "asn"), "status") == "requires_target_setup", "Unknown provider incorrectly claimed safe");
             p["asn_policy"] = O(); AsnPolicy.SetExcluded(p, AsnPolicy.SubscriptionId("A"), true); f.Write("policy.yaml", p);

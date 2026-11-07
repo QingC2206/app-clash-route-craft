@@ -24,6 +24,8 @@ public static class SubscriptionBaselineCompiler
             if (!strict)
             {
                 SubscriptionBaseline.RequireRules(original, primaryName);
+                fetch.RuleAudit.FilterDocument(original, "主订阅 · " + primaryName);
+                await fetch.RuleAudit.InspectProvidersAsync(original, fetch, "主订阅 · " + primaryName, read.Base);
                 await asn.InspectDocumentAsync(original, AsnPolicy.SubscriptionId(primaryName), "主订阅 · " + primaryName, fetch, read.Base);
             }
         }
@@ -146,7 +148,7 @@ public static class SubscriptionBaselineCompiler
                 foreach (var rule in L(policy, group)) Add(Rules.WithAction(rule, Action(JsonValue.Create(group switch { "direct" => "DIRECT", "reject" => "REJECT", _ => "PROXY" }))), "manual:" + group, "手工 · " + (group switch { "direct" => "直连", "reject" => "拦截", _ => "代理" }));
             foreach (var remote in ProjectOrdering.OrderedRemotes(policy).Where(x => B(x, "enabled", true)))
             {
-                var loaded = await fetch.ReadAsync(remote, bytes => Rules.ParseRemote(bytes, remote), S(remote, "name"), Path.GetDirectoryName(policyPath));
+                var loaded = await fetch.ReadAsync(remote, bytes => Rules.ParseRemote(bytes, remote, fetch.RuleAudit, "附加名单 · " + S(remote, "name")), S(remote, "name"), Path.GetDirectoryName(policyPath));
                 var entries = List(loaded.Value, "远程附加规则"); string action = Action(remote["action"]);
                 foreach (var rule in entries) Add(Rules.WithAction(rule, action, inputFormat: "rule"), AsnPolicy.RemoteId(remote), "附加来源 · " + S(remote, "name"));
                 remoteSummaries.Push(O("name", S(remote, "name"), "rules", entries.Count, "action", action));
@@ -181,6 +183,8 @@ public static class SubscriptionBaselineCompiler
             "dns", O("configured", dnsExit.Length > 0, "enabled", dnsExit.Length > 0, "source", dnsExit.Length > 0 ? "privacy" : "client", "proxy_exit", dnsExit, "proxy_references", ProfileCompiler.ValidateDns(configuration)),
             "rule_merge", O("precedence", strict ? "user_groups_then_proxy" : "user_groups_then_primary_subscription", "group_order", B(policy, "extra_rules_enabled", true) ? A(ProjectOrdering.RuleOrder(policy)) : new JsonArray(), "input_count", rules.Count, "duplicates_removed", 0));
         report["asn"] = asn.Report(configuration, ConfigurationValidation.Target(settings));
+        fetch.RuleAudit.AddReport(report);
+        report["entrance_region"] = EntranceFilters.Mode(selection);
         return new(configuration, report);
     }
 }

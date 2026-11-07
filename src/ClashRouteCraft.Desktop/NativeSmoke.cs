@@ -23,6 +23,7 @@ internal static class NativeSmoke
                 O("match", "IP-CIDR,127.0.0.0/8,no-resolve", "action", "REJECT"), O("match", "IP-CIDR,192.0.2.0/24", "action", "REJECT"), O("match", "IP-CIDR,127.0.0.0/8,no-resolve", "action", "REJECT") });
             policy["reject"] = A(new System.Text.Json.Nodes.JsonNode?[] { System.Text.Json.Nodes.JsonValue.Create("DOMAIN,native-rule.example"),
                 System.Text.Json.Nodes.JsonValue.Create(@"DOMAIN-REGEX,^api[0-9]{1,3}\.example$"), O("match", @"DOMAIN-REGEX,^foo,bar$|^blocked\.example$") });
+            L(policy, "reject").Push("DOMAIN-SUFFIX,smartdnsInvalid Name.example");
             var imported = ImportedRuleSets.Parse(System.Text.Encoding.UTF8.GetBytes("rules: ['DOMAIN,native-import.example,External', 'MATCH,External']\nproxies: [{password: discarded-secret}]"), "Generic");
             M(imported, "mappings")["External"] = "DIRECT";
             policy["rule_sets"] = new System.Text.Json.Nodes.JsonArray(imported);
@@ -32,6 +33,9 @@ internal static class NativeSmoke
             var subscriptionRules = SubscriptionRuleImport.ReadAsync(session, 0, false).GetAwaiter().GetResult();
             if (L(subscriptionRules, "rules").Count != 1 || Canonical(subscriptionRules).Contains("香港-示例")) throw new BuildException("项目订阅规则导入原生自检失败");
             var built = new BuildEngine().BuildProjectAsync(workspace, "SmokeTest", new(Offline: true)).GetAwaiter().GetResult();
+            if (L(built.Report, "invalid_domain_rules").Count != 1 || File.ReadAllText(built.OutputPath).Contains("smartdnsInvalid")) throw new BuildException("异常域名跳过与提示自检失败");
+            var entranceNodes = A(new System.Text.Json.Nodes.JsonNode?[] { O("name", "US01", "type", "http"), O("name", "香港", "type", "http"), O("name", "AUS", "type", "http") });
+            if (!SubscriptionBaseline.Eligible(entranceNodes, O(), O(EntranceFilters.Key, "us")).SequenceEqual(["US01"])) throw new BuildException("机场入口地区自检失败");
             string appVersion = System.Reflection.CustomAttributeExtensions.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(typeof(Program).Assembly)!.InformationalVersion.Split('+')[0];
             string[] header = File.ReadLines(built.OutputPath).Take(2).ToArray();
             if (!header[0].StartsWith("# Generated at: ") || !DateTimeOffset.TryParseExact(header[0][16..], "yyyy-MM-dd'T'HH:mm:sszzz", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _)
@@ -76,7 +80,7 @@ internal static class NativeSmoke
             Task.Run(() => CheckRuleUrlAsync(session)).GetAwaiter().GetResult();
             Task.Run(() => CheckSubscriptionPullAsync(workspace)).GetAwaiter().GetResult();
             Task.Run(CheckResidenceProbeAsync).GetAwaiter().GetResult();
-            var defaults = session.Policy; defaults["proxy"] = A("DOMAIN,native-default.example"); RuleDefaults.Save(workspace, defaults);
+            var defaults = new DomainRuleAudit().FilterPolicy(session.Policy); defaults["proxy"] = A("DOMAIN,native-default.example"); RuleDefaults.Save(workspace, defaults);
             if (S(L(new WorkspaceSession(workspace, "Example").Policy, "proxy")[0]) != "DOMAIN,native-default.example") throw new BuildException("默认分流模板原生自检失败");
             if (ImportedRuleSets.Sets(new WorkspaceSession(workspace, "Example").Policy).Count != 1) throw new BuildException("默认规则集原生自检失败");
             WorkspaceSession.CreateProject(workspace, "Copy", "SmokeTest");
@@ -96,7 +100,7 @@ internal static class NativeSmoke
             Task.Run(() => CheckCustomGroupOrder(workspace)).GetAwaiter().GetResult();
             Task.Run(() => CheckAsnPolicy(workspace)).GetAwaiter().GetResult();
             Task.Run(() => CheckResidentialOnly(workspace)).GetAwaiter().GetResult();
-            File.WriteAllText(resultPath, O("ok", true, "pages", pages, "project_crud", true, "ordering", true, "custom_group_priority", true, "asn_policy", true, "restore_and_subscription_identity", true, "classified_rules", true, "readonly_example", true, "rule_defaults", true, "parameter_inspection", true, "parameter_remote_urls", true, "standalone_subscription_pull", true, "forced_subscription_cache_fallback", true, "residence_proxy_probe", true, "rule_semantics", true, "rule_semantics_v2", true, "domain_list_auto_detection", true, "clash_target_and_dns_cleanup", true, "airport_entrance_groups", true, "dns_privacy", true, "dns_default_recovery", true, "dependency_fingerprint", true, "proxy_count", I(built.Report, "proxy_count", 0), "mode", "native UI initialization, isolated builds and loopback rule/subscription/proxy requests; no window shown").ToJsonString(JsonOptions));
+            File.WriteAllText(resultPath, O("ok", true, "domain_rule_validation", true, "entrance_region_presets", true, "pages", pages, "project_crud", true, "ordering", true, "custom_group_priority", true, "asn_policy", true, "restore_and_subscription_identity", true, "classified_rules", true, "readonly_example", true, "rule_defaults", true, "parameter_inspection", true, "parameter_remote_urls", true, "standalone_subscription_pull", true, "forced_subscription_cache_fallback", true, "residence_proxy_probe", true, "rule_semantics", true, "rule_semantics_v2", true, "domain_list_auto_detection", true, "clash_target_and_dns_cleanup", true, "airport_entrance_groups", true, "dns_privacy", true, "dns_default_recovery", true, "dependency_fingerprint", true, "proxy_count", I(built.Report, "proxy_count", 0), "mode", "native UI initialization, isolated builds and loopback rule/subscription/proxy requests; no window shown").ToJsonString(JsonOptions));
             return 0;
         }
         catch (Exception ex) { File.WriteAllText(resultPath, O("ok", false, "error_type", ex.GetType().Name, "error", ex is BuildException ? ex.Message : "原生界面或生成自检失败").ToJsonString(JsonOptions)); return 1; }

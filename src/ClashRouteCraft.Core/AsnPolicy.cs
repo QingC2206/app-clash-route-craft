@@ -85,7 +85,7 @@ public sealed class AsnPolicy
                 throw new BuildException($"{label} 的规则集 {name} 无法按来源排除 ASN：仅支持可读取的 HTTP 文本规则集或内嵌规则集；旧输出已保留。");
             var spec = O("url", provider["url"], "format", S(provider, "format", "yaml"), "behavior", "classical");
             if (provider.ContainsKey("header")) spec["headers"] = provider["header"]?.DeepClone();
-            var loaded = await fetch.ReadAsync(spec, bytes => Rules.ParseRemote(bytes, spec), label + " / " + name, baseDirectory);
+            var loaded = await fetch.ReadAsync(spec, bytes => Rules.ParseRemote(bytes, spec, fetch.RuleAudit, label + " / rule-providers/" + name), label + " / " + name, baseDirectory);
             var payload = new JsonArray(); int position = 0;
             foreach (var raw in List(loaded.Value, "远程规则集"))
             {

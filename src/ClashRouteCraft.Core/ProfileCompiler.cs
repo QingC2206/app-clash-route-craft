@@ -14,6 +14,7 @@ public static class ProfileCompiler
         using var fetch = new Fetcher(root, M(settings, "http"), offline, cancellation);
         string policyPath = fetch.Resolve(S(settings, "policy_file", "policy.yaml"));
         var policy = SubscriptionBaseline.EffectivePolicy(Map(YamlData.Read(policyPath), "policy"), settings);
+        policy = fetch.RuleAudit.FilterPolicy(policy);
         if (SubscriptionBaseline.Enabled(policy)) return await SubscriptionBaselineCompiler.CompileAsync(settings, policy, policyPath, fetch, cancellation);
         string geoMode = GeoRules.Mode(policy);
         ParameterInspection.ValidateRules(policy);
@@ -94,7 +95,7 @@ public static class ProfileCompiler
             cancellation.ThrowIfCancellationRequested(); if (!B(remote, "enabled", true)) continue;
             string name = Name(remote["name"], "远程规则集"); if (!remoteNames.Add(name)) throw new BuildException("启用的远程规则集名称不能重复");
             string target = Action(remote["action"]);
-            var loaded = await fetch.ReadAsync(remote, bytes => Rules.ParseRemote(bytes, remote), "规则·" + name, Path.GetDirectoryName(policyPath));
+            var loaded = await fetch.ReadAsync(remote, bytes => Rules.ParseRemote(bytes, remote, fetch.RuleAudit, "附加名单 · " + S(remote, "name")), "规则·" + name, Path.GetDirectoryName(policyPath));
             var entries = List(loaded.Value, "远程规则");
             foreach (var entry in entries) AddRule(Rules.WithAction(entry, target, inputFormat: "rule"), name, "remote", AsnPolicy.RemoteId(remote), "附加来源 · " + name);
             remoteSummaries.Push(O("name", name, "rules", entries.Count, "action", target));
@@ -135,6 +136,7 @@ public static class ProfileCompiler
         if (configuration["sub-rules"] is JsonObject subRules)
         {
             var runtimeRules = O("sub-rules", subRules);
+            fetch.RuleAudit.FilterDocument(runtimeRules, "高级配置");
             await asn.InspectDocumentAsync(runtimeRules, "runtime:sub-rules", "高级配置 · 子规则", fetch, root);
             configuration["sub-rules"] = runtimeRules["sub-rules"]?.DeepClone();
         }
@@ -150,6 +152,8 @@ public static class ProfileCompiler
         report["strict_mode"] = strict;
         if (strict) M(report, "rule_merge")["precedence"] = "user_groups_then_proxy";
         report["asn"] = asn.Report(configuration, ConfigurationValidation.Target(settings));
+        fetch.RuleAudit.AddReport(report);
+        report["entrance_region"] = EntranceFilters.Mode(selection);
         return new(configuration, report);
     }
     public static void ValidateResidences(JsonArray residences)
@@ -204,7 +208,7 @@ public static class ProfileCompiler
             Name(JsonValue.Create(tag), "geosite tag"); var spec = IsString(rawSpec) ? O("url", rawSpec) : Map(rawSpec, "GeoSite 来源");
             var positions = Enumerable.Range(0, rules.Count).Where(i => S(rules[i]).StartsWith("GEOSITE,") && Rules.Split(S(rules[i]))[1].Equals(tag, StringComparison.OrdinalIgnoreCase)).ToArray();
             if (positions.Length == 0) continue;
-            var loaded = await fetch.ReadAsync(spec, bytes => Rules.ParseRemote(bytes, spec), "GeoSite·" + tag, baseDirectory);
+            var loaded = await fetch.ReadAsync(spec, bytes => Rules.ParseRemote(bytes, spec, fetch.RuleAudit, "展开名单 · " + S(spec, "name", S(spec, "file", "GeoSite/ASN"))), "GeoSite·" + tag, baseDirectory);
             var payload = new List<string>();
             foreach (var entry in List(loaded.Value, "GeoSite"))
             {
@@ -227,7 +231,7 @@ public static class ProfileCompiler
             if (!Regex.IsMatch(number, @"^\d+$")) throw new BuildException("asn_sources 的键必须是 ASN 编号");
             var positions = Enumerable.Range(0, rules.Count).Where(i => S(rules[i]).StartsWith("IP-ASN," + number + ",")).ToArray(); if (positions.Length == 0) continue;
             var spec = IsString(rawSpec) ? O("url", rawSpec) : (JsonObject)Map(rawSpec, "ASN 来源").DeepClone(); spec["behavior"] = "ipcidr";
-            var loaded = await fetch.ReadAsync(spec, bytes => Rules.ParseRemote(bytes, spec), "ASN·" + number, baseDirectory);
+            var loaded = await fetch.ReadAsync(spec, bytes => Rules.ParseRemote(bytes, spec, fetch.RuleAudit, "展开名单 · " + S(spec, "name", S(spec, "file", "GeoSite/ASN"))), "ASN·" + number, baseDirectory);
             var payload = List(loaded.Value, "ASN").Select(x => string.Join(',', Rules.Split(S(x)).Take(2))).Distinct().ToList();
             string name = "HomeChain-ASN-" + number;
             if (configuration["rule-providers"] is null) configuration["rule-providers"] = new JsonObject();

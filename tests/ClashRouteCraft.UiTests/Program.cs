@@ -630,7 +630,7 @@ try
         checkFlyout.Hide(); window.MouseMove(new Point(10, 10)); Pump();
         var checkPoint = NamedButton("ValidateUrls_proxy").TranslatePoint(new Point(15, 15), window)!.Value;
         window.MouseMove(checkPoint); Pump(); Check(checkFlyout.IsOpen, "Hover did not reopen URL result flyout");
-        Check(CheckText().Contains("1/2 通过") && ((Control)checkFlyout.Content!).GetLogicalDescendants().OfType<Avalonia.Controls.Shapes.Path>().Any(x => Equals(x.Tag, "pass") && ToolTip.GetTip(x)?.ToString()?.Contains("2 条规则") == true) && ((Control)checkFlyout.Content!).GetLogicalDescendants().OfType<Avalonia.Controls.Shapes.Path>().Any(x => Equals(x.Tag, "fail") && ToolTip.GetTip(x)?.ToString()?.Contains("HTML/XML") == true) && CheckText().Contains(server.Url + "invalid"), "URL results did not identify each URL and its parsing outcome");
+        Check(CheckText().Contains("1/2 通过") && ((Control)checkFlyout.Content!).GetLogicalDescendants().OfType<Avalonia.Controls.Shapes.Path>().Any(x => Equals(x.Tag, "pass") && ToolTip.GetTip(x)?.ToString()?.Contains("2 条有效规则") == true) && ((Control)checkFlyout.Content!).GetLogicalDescendants().OfType<Avalonia.Controls.Shapes.Path>().Any(x => Equals(x.Tag, "fail") && ToolTip.GetTip(x)?.ToString()?.Contains("HTML/XML") == true) && CheckText().Contains(server.Url + "invalid"), "URL results did not identify each URL and its parsing outcome");
         Check(!window.Session.Dirty && window.Session.Documents["policy.yaml"].Text == beforePolicy && beforeFiles.SequenceEqual(Directory.GetFiles(workspace, "*", SearchOption.AllDirectories).Order()), "URL validation changed config, outputs or cache files");
         Check(!NamedControl("PageScroll").GetVisualDescendants().OfType<ContentControl>().Any(x => x.Name == "UrlCheckResults_proxy"), "URL results occupied page layout"); Pump(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(2); using (var frame = window.CaptureRenderedFrame()) frame!.Save(Path.Combine(output, "rule-url-validation.png"));
         checkFlyout.Hide(); RemoteBox("proxy").Text = string.Join('\n', Enumerable.Range(1, 5).Select(i => server.Url + "valid?" + i + "&source=remote-rules/" + new string('a', 90) + ".list")); Pump();
@@ -752,6 +752,7 @@ try
     FunctionalUiRegression.Run(workspace, output, Check);
     AsnUiRegression.Run(workspace, output, Check);
     RulePresetUiRegression.Run(workspace, output, Check);
+    EntranceUiRegression.Run(workspace, output, Check);
     Console.WriteLine($"RESULT {checks} UI checks passed; screenshots: {output}");
 }
 

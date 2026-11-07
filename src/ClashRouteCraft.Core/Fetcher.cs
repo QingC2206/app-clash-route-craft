@@ -10,6 +10,7 @@ public sealed class Fetcher : IDisposable
     public string Root { get; }
     public JsonObject Options { get; }
     public JsonArray Events { get; } = new();
+    public DomainRuleAudit RuleAudit { get; } = new();
     readonly bool offline;
     readonly string cache;
     readonly HttpClient client;
@@ -56,7 +57,7 @@ public sealed class Fetcher : IDisposable
             try { bytes = await File.ReadAllBytesAsync(path, cancellation); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { throw new BuildException($"{label} 的本地文件不可读"); }
             var value = parser(bytes);
-            Events.Push(O("item", label, "status", "local", "bytes", bytes.Length));
+            Events.Push(O("item", label, "status", "local", "bytes", bytes.Length, "sha256", Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(bytes))));
             return (value, Path.GetDirectoryName(path));
         }
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not "http" and not "https") throw new BuildException($"{label} 的 URL 协议必须为 HTTP(S)");

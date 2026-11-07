@@ -42,8 +42,20 @@ public sealed partial class MainWindow
                 var source = O("name", name, "url", "", "enabled", true, "priority", list.Count + 1); session.Subscriptions.Add(source); list.Push(source); expandedSource = list.Count - 1;
             }); RenderPage();
         }); add.Name = "AddSource"; add.IsEnabled = !IsBusy;
-        content.Children.Add(Row(add)); content.Children.Add(Label(UsesSubscriptionBaseline() ? "第一个启用的订阅提供分流规则，归并为本地直连、代理、拦截；其余订阅仅提供节点。上下移动只更换规则来源。机场入口可选聚合组或任一订阅组，组内自动测速；默认筛选香港、日本、台湾、新加坡。所有代理业务使用同一个“代理出口”。" : "上方优先，下方备用。勾选的订阅参与生成；点“编辑”填写链接或调整筛选。", true, 13));
+        content.Children.Add(Row(add)); content.Children.Add(Label(UsesSubscriptionBaseline() ? "第一个启用的订阅提供分流规则，归并为本地直连、代理、拦截；其余订阅仅提供节点。上下移动只更换规则来源。机场入口可选聚合组或任一订阅组，组内自动测速；入口地区由下方方案决定。所有代理业务使用同一个“代理出口”。" : "上方优先，下方备用。勾选的订阅参与生成；点“编辑”填写链接或调整筛选。", true, 13));
         content.Children.Add(Note("订阅可选：只用住宅代理时，删除或停用所有订阅，并在“住宅出口”填写可直接访问的代理。此时不会生成机场入口或链式住宅节点。"));
+        string[] regionValues = ["custom", "nearby", "nearby-no-hk-mo", "us"];
+        string regionMode = S(M(settings, "selection"), EntranceFilters.Key, "custom");
+        var region = new ComboBox { Name = "EntranceRegionPreset", HorizontalAlignment = HorizontalAlignment.Stretch,
+            ItemsSource = new[] { "现有 / 自定义筛选（保留原设置）", "环中国地区：香港、澳门、日本、台湾、新加坡、韩国", "环中国地区：排除香港、澳门", "美国" },
+            SelectedIndex = Array.IndexOf(regionValues, regionMode), IsEnabled = !IsBusy };
+        region.SelectionChanged += (_, _) =>
+        {
+            if (region.SelectedIndex < 0) return;
+            Mutate("settings.yaml", doc => { if (doc["selection"] is null) doc["selection"] = new JsonObject(); M(doc, "selection")[EntranceFilters.Key] = regionValues[region.SelectedIndex]; });
+            RenderPage();
+        };
+        content.Children.Add(Card("机场入口地区", region, Label("按节点名称筛选第一跳，不验证实际 IP 所在地；聚合组与各订阅组使用同一方案。选择预设时覆盖保留正则，仍应用排除正则。原有自定义条件保留，切回即可恢复。", true, 13)));
         for (int i = 0; i < sources.Count; i++)
         {
             int index = i; var source = Map(sources[i], "订阅"); string name = S(source, "name"); var snapshot = Label(SnapshotInfo(source), true, 12); Action updateProblems = () => { }; Button? pull = null;
@@ -86,7 +98,7 @@ public sealed partial class MainWindow
                     if (IsBusy) return; session.RemoveSource(index); expandedSource = -1; RenderPage();
                 }); deleteSource.Classes.Add("danger");
                 card.Children.Add(Row(Check("显示链接", false, show => url.PasswordChar = show ? '\0' : '●'), rename, AsyncButton("导入订阅文件…", () => ImportSnapshotAsync(index)), deleteSource));
-                var include = TextInput(S(source, "include", S(M(settings, "selection"), "include", UsesSubscriptionBaseline() ? SubscriptionBaseline.JumpInclude : Nodes.Asia)), value => Change("include", JsonValue.Create(value))); include.Name = "Sourceinclude" + index;
+                var include = TextInput(S(source, "include", S(M(settings, "selection"), "include", UsesSubscriptionBaseline() ? SubscriptionBaseline.JumpInclude : Nodes.Asia)), value => Change("include", JsonValue.Create(value))); include.Name = "Sourceinclude" + index; include.IsEnabled = regionMode == "custom" && !IsBusy;
                 var exclude = TextInput(S(source, "exclude", S(M(settings, "selection"), "exclude", UsesSubscriptionBaseline() ? SubscriptionBaseline.JumpExclude : "")), value => Change("exclude", JsonValue.Create(value))); exclude.Name = "Sourceexclude" + index;
                 card.Children.Add(new Expander { Header = "此订阅的筛选与请求选项", IsExpanded = sourceAdvanced, HorizontalAlignment = HorizontalAlignment.Stretch,
                     Content = Stack(Pair(Field("保留节点（正则，可留空）", include), Field("排除节点（正则）", exclude)), Field("请求客户端标识", TextInput(S(source, "user_agent", "clash-verge/v2.4.7"), value => Change("user_agent", JsonValue.Create(value))))) });
@@ -100,7 +112,8 @@ public sealed partial class MainWindow
         void SetSelection(string key, JsonNode value) => Mutate("settings.yaml", doc => { if (doc["selection"] is null) doc["selection"] = new JsonObject(); M(doc, "selection")[key] = value.DeepClone(); });
         var interval = new NumericUpDown { Value = I(selection, "interval", 300), Minimum = 1, Maximum = 86400, Increment = 30, FormatString = "0" }; interval.ValueChanged += (_, _) => { if (interval.Value is { } value) SetSelection("interval", JsonValue.Create((int)value)!); };
         var tolerance = new NumericUpDown { Value = I(selection, "tolerance", 50), Minimum = 0, Maximum = 10000, Increment = 10, FormatString = "0" }; tolerance.ValueChanged += (_, _) => { if (tolerance.Value is { } value) SetSelection("tolerance", JsonValue.Create((int)value)!); };
-        var globalFilters = Stack(Pair(Field("保留节点（正则）", TextInput(S(selection, "include", UsesSubscriptionBaseline() ? SubscriptionBaseline.JumpInclude : Nodes.Asia), value => SetSelection("include", JsonValue.Create(value)!))), Field("排除节点（正则）", TextInput(S(selection, "exclude", UsesSubscriptionBaseline() ? SubscriptionBaseline.JumpExclude : ""), value => SetSelection("exclude", JsonValue.Create(value)!)))));
+        var globalInclude = TextInput(S(selection, "include", UsesSubscriptionBaseline() ? SubscriptionBaseline.JumpInclude : Nodes.Asia), value => SetSelection("include", JsonValue.Create(value)!)); globalInclude.IsEnabled = regionMode == "custom" && !IsBusy;
+        var globalFilters = Stack(Pair(Field("保留节点（正则）", globalInclude), Field("排除节点（正则）", TextInput(S(selection, "exclude", UsesSubscriptionBaseline() ? SubscriptionBaseline.JumpExclude : ""), value => SetSelection("exclude", JsonValue.Create(value)!)))));
         globalFilters.Children.Add(Pair(Field("健康检查间隔（秒）", interval), Field("延迟容差（毫秒）", tolerance)));
         content.Children.Add(new Expander { Name = "SourceGlobalFilters", Header = UsesSubscriptionBaseline() ? "机场入口的默认筛选与测速（高级）" : "所有订阅的默认筛选与健康检查（高级）", HorizontalAlignment = HorizontalAlignment.Stretch, Content = globalFilters });
         return content;
@@ -114,7 +127,8 @@ public sealed partial class MainWindow
             string prefix = session.Subscriptions.UrlChanged(source) ? "链接已修改，当前仍为旧节点 · " : "";
             var document = Nodes.Document(File.ReadAllBytes(path)); int count = L(document, "proxies").Count;
             string routing = UsesSubscriptionBaseline() && SubscriptionBaseline.IsPrimary(session.Settings, name) ? SubscriptionBaseline.RuleCount(document) > 0 ? $" · 主订阅，{SubscriptionBaseline.RuleCount(document):N0} 条规则" : " · 主订阅缺少规则，请重新拉取完整订阅" : "";
-            return prefix + $"{count} 个节点{routing} · 更新于 {File.GetLastWriteTime(path):MM-dd HH:mm}";
+            int eligible = SubscriptionBaseline.Eligible(L(document, "proxies"), source, M(session.Settings, "selection")).Count;
+            return prefix + $"{count} 个节点 · {eligible} 个入口候选{routing} · 更新于 {File.GetLastWriteTime(path):MM-dd HH:mm}";
         }
         catch (Exception ex) when (ex is BuildException or IOException) { return "节点文件需要检查"; }
     }

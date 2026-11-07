@@ -209,11 +209,20 @@ public sealed partial class MainWindow
         copy.IsEnabled = OutputValidated();
         var openOutput = Button("打开输出目录", () => OpenPath(session.OutputPath));
         return Stack(IsBusy ? Note(taskStage + "，下面显示上一次成功输出；请等待当前任务结束后再使用。") : current ? Note("这是当前配置的生成结果。文件校验通过后，仍需在设备上验收联网。") : Card("当前显示上一次成功输出", Label(outputStatus == OutputFreshness.ValidationChanged ? "校验程序或数据库已有变化，请重新生成以完成校验后再导入。" : "配置或名单已有变化，请重新生成后再导入。")),
+            DomainWarnings(report),
             Card("主配置", Label("将 HomeChain.yaml 导入 Clash 客户端并启用。"),
                 Row(openOutput, copy), badges,
                 Label($"生成于 {LocalTime(S(report, "built_at"))} · {I(report, "proxy_count", 0)} 个节点 · {I(report, "rule_count", 0)} 条路由规则", true, UiMetrics.Supporting),
                 Label(GeoDependencyNotice(report).Trim(), true, UiMetrics.Supporting)),
             new Expander { Header = "查看文件内容", HorizontalAlignment = HorizontalAlignment.Stretch, Content = Stack(Check("显示敏感字段", previewSecrets, show => { previewSecrets = show; RenderPage(); }), CodeCard(editor), Label("预览默认遮盖凭据；复制使用原始文件全文。", true, UiMetrics.Supporting)) });
+    }
+    Control DomainWarnings(JsonObject report)
+    {
+        var skipped = L(report, "invalid_domain_rules").OfType<JsonObject>().ToArray();
+        var uncheckedSources = L(report, "unchecked_domain_sources").OfType<JsonObject>().ToArray();
+        return new Expander { Name = "DomainRuleWarnings", IsVisible = skipped.Length + uncheckedSources.Length > 0,
+            Header = $"异常域名规则：已跳过 {skipped.Length} 条 · 未检查来源 {uncheckedSources.Length} 个", IsExpanded = true,
+            Content = Label(string.Join("\n", skipped.Select(DomainRuleAudit.Message).Concat(uncheckedSources.Select(x => S(x, "source") + " · " + S(x, "position") + "：" + S(x, "reason")))), true, UiMetrics.Supporting) };
     }
     Border CodeCard(TextEditor editor, params Control[] actions)
     {

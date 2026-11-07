@@ -64,7 +64,7 @@ static class ResidentialOnlyRegression
         });
         await test("Rule preset malformed domains, URLs and catchalls rejected", () =>
         {
-            foreach (var entry in new[] { O("domains", A("https://example.com/path")), O("urls", A("file:///private")), O("rules", A("MATCH")), O("rules", A("DOMAIN,a.example,REJECT")) })
+            foreach (var entry in new[] { O("urls", A("file:///private")), O("rules", A("MATCH")), O("rules", A("DOMAIN,a.example,REJECT")) })
             {
                 bool failed = false;
                 try { RulePresets.Parse(O("version", 1, "presets", A(new JsonNode?[] { Merge(O("id", "bad", "name", "Bad"), entry) }))); }

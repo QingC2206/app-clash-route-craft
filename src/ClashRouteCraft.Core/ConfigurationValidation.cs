@@ -37,12 +37,13 @@ public static class ConfigurationValidation
             if (!names.Add(name)) throw new BuildException("订阅名称不能重复（文件名不区分大小写）");
             if (!B(source, "enabled", true)) continue;
             enabled++;
-            Pattern(S(source, "include", S(M(settings, "selection"), "include", Nodes.Asia)), name);
-            string exclude = S(source, "exclude", S(M(settings, "selection"), "exclude")); if (exclude.Length > 0) Pattern(exclude, name);
+            var filters = EntranceFilters.Patterns(source, M(settings, "selection"), Nodes.Asia);
+            Pattern(filters.Include, name);
+            string exclude = filters.Exclude; if (exclude.Length > 0) Pattern(exclude, name);
             Headers(source);
         }
         // A project may use directly reachable residential proxies without subscriptions.
-        var selection = M(settings, "selection");
+        var selection = M(settings, "selection"); EntranceFilters.Mode(selection);
         if (I(selection, "interval", 300) < 1 || I(selection, "timeout", 5000) < 1 || I(selection, "tolerance", 50) < 0) throw new BuildException("健康检查间隔、超时或延迟容差无效");
         if (!HttpUrl(S(selection, "test_url", "https://www.gstatic.com/generate_204"))) throw new BuildException("健康检查地址需要 HTTP(S) URL");
         if (M(settings, "runtime").Any(x => new[] { "proxies", "proxy-providers", "proxy-groups", "rules", "rule-providers" }.Contains(x.Key))) throw new BuildException("runtime 不能覆盖生成器管理的代理、分组和规则字段");
@@ -83,6 +84,7 @@ public static class ConfigurationValidation
     public static void Resources(JsonObject settings, string project, JsonObject? policy = null)
     {
         var validation = M(settings, "validation"); if (!B(validation, "required")) return;
+        if (policy is not null) policy = new DomainRuleAudit().FilterPolicy(policy);
         string Resolve(string key) => Path.GetFullPath(S(validation, key), project);
         if (S(validation, "mihomo").Length == 0 || !File.Exists(Resolve("mihomo"))) throw new BuildException("缺少 Mihomo 校验程序；请在应用设置中下载缺失资源，或检查高级 YAML 中的 validation");
         if (policy is not null && SubscriptionBaseline.Primary(settings) is not null && !SubscriptionBaseline.Enabled(policy) && GeoRules.Mode(policy) == "native")

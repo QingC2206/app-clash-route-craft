@@ -41,7 +41,7 @@ public static class ParameterInspection
                 var result = await RemoteRuleValidation.CheckAsync(session.ProjectPath, source, http, cancellation).ConfigureAwait(false);
                 cancellation.ThrowIfCancellationRequested();
                 var issue = result.Success ? null : new ConfigurationIssue(group is null ? "yaml" : "policy", group is null ? "policy.yaml" : "RemoteUrls_" + group, result.Message);
-                yield return new(title, url + " · " + result.Message, result.Success ? "pass" : "fail", issue, key);
+                yield return new(title, url + " · " + result.Message, result.Success ? result.SkippedCount > 0 ? "warning" : "pass" : "fail", issue, key);
             }
         }
     }
@@ -102,6 +102,8 @@ public static class ParameterInspection
         bool standalone = false;
         try { standalone = SubscriptionBaseline.Primary(settings) is null; policy = SubscriptionBaseline.EffectivePolicy(policy, settings); }
         catch (BuildException) { /* The per-field checks below report invalid settings. */ }
+        var domainAudit = new DomainRuleAudit();
+        yield return Evaluate("域名规则检查", "policy", "Manual_proxy", () => { policy = domainAudit.FilterPolicy(policy); return ("按来源检查域名；异常项仅在生成副本中跳过，原配置保留", false); });
         bool subscriptionBaseline = S(policy, "rule_source", "custom") == "subscription";
         bool checkExtras = !subscriptionBaseline || B(policy, "extra_rules_enabled", true);
         JsonNode? residenceDoc = parsed.GetValueOrDefault("residential.yaml");
@@ -174,6 +176,7 @@ public static class ParameterInspection
             if (build is not null && ConfigurationValidation.Download(session, primary, build)) return ($"将拉取“{name}”的完整规则；其他订阅仅提供节点", false);
             if (!File.Exists(path)) return ($"规则来源：{name}；请先拉取完整订阅", true);
             var document = Nodes.Document(File.ReadAllBytes(path)); SubscriptionBaseline.RequireRules(document, name);
+            domainAudit.FilterDocument(document, "主订阅 · " + name);
             var routing = new SubscriptionRouting(document);
             routing.Rewrite(L(document, "rules"), SubscriptionRouting.ProxyGroup); routing.RewriteSubRules(SubscriptionRouting.ProxyGroup);
             return ($"{name} · {SubscriptionBaseline.RuleCount(document)} 条规则，已检查直连/代理/拦截归并；其他订阅仅提供节点", false);
@@ -238,11 +241,12 @@ public static class ParameterInspection
                 {
                     using var fetch = new Fetcher(session.ProjectPath, M(settings, "http"), offline: true);
                     string file = fetch.Resolve(S(source, "file"));
-                    foreach (var rule in Rules.ParseRemote(File.ReadAllBytes(file), source)) Rules.ValidateSyntax(S(rule));
+                    foreach (var rule in Rules.ParseRemote(File.ReadAllBytes(file), source, domainAudit, "本地名单 · " + S(source, "name"))) Rules.ValidateSyntax(S(rule));
                 }
             int count = sources.Count(x => S(x, "url").Length > 0);
             return (count == 0 ? sources.Length == 0 ? "未配置远程名单" : $"{sources.Length} 个本地来源，内容检查通过" : $"{count} 个 URL 来源；在线内容检查将在参数检查或生成时执行", count > 0);
         });
+        foreach (var warning in domainAudit.Skipped.OfType<JsonObject>()) yield return new("异常域名规则", DomainRuleAudit.Message(warning), "warning");
         yield return Evaluate("DNS · 地址与出口", "policy", "Dns_nameserver", () =>
         {
             if (DnsPrivacy.Enabled(policy))

@@ -26,7 +26,7 @@ public record NetworkPrefix(byte[] Address, int Prefix)
 
 public static class Rules
 {
-    public const int Version = 3;
+    public const int Version = 4;
     static readonly HashSet<string> Types = ["DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD", "DOMAIN-REGEX", "DOMAIN-WILDCARD", "GEOSITE", "GEOIP", "IP-CIDR", "IP-CIDR6", "IP-ASN", "IP-SUFFIX", "SRC-GEOIP", "SRC-IP-ASN", "SRC-IP-CIDR", "SRC-IP-SUFFIX", "SRC-PORT", "DST-PORT", "IN-PORT", "PROCESS-NAME", "PROCESS-PATH", "PROCESS-NAME-REGEX", "PROCESS-PATH-REGEX", "PROCESS-NAME-WILDCARD", "PROCESS-PATH-WILDCARD", "NETWORK", "DSCP", "IN-TYPE", "IN-USER", "IN-NAME", "REMATCH-NAME", "AND", "OR", "NOT", "UID"];
     static bool RegexType(ReadOnlySpan<char> value) => value.Trim().Equals("DOMAIN-REGEX", StringComparison.OrdinalIgnoreCase)
         || value.Trim().Equals("PROCESS-NAME-REGEX", StringComparison.OrdinalIgnoreCase)
@@ -141,7 +141,7 @@ public static class Rules
             string kind = bareSuffix || text.StartsWith("+.") || text.StartsWith('.') ? "DOMAIN-SUFFIX" : "DOMAIN";
             if (text.StartsWith("*.")) kind = "DOMAIN-WILDCARD";
             string domain = text.StartsWith("+.") ? text[2..] : text.TrimStart('.');
-            if (domain.Length == 0 || Regex.IsMatch(domain, @"[\s/:]")) throw new BuildException("域名规则格式不正确");
+            DomainRuleAudit.Domain(domain, kind == "DOMAIN-WILDCARD");
             return $"{kind},{domain},{action}";
         }
         int first = text.IndexOf(','); string type = text[..first].Trim().ToUpperInvariant();
@@ -155,26 +155,31 @@ public static class Rules
             return string.Join(',', type, payload, action);
         }
         var parts = Split(text);
-        if (parts.Count < 2 || parts[1].Length == 0) throw new BuildException("规则缺少匹配条件");
+        if (parts.Count < 2 || parts[1].Length == 0)
+        {
+            if (type is "DOMAIN" or "DOMAIN-SUFFIX" or "DOMAIN-WILDCARD") throw new InvalidDomainRuleException("域名为空");
+            throw new BuildException("规则缺少匹配条件");
+        }
         var flags = parts.Skip(2).Where(x => x is "no-resolve" or "src").ToArray();
         if (parts.Skip(2).Count(x => x is not "no-resolve" and not "src") > 1) throw new BuildException("规则字段过多，请检查逗号或条件格式");
         return string.Join(',', new[] { type, parts[1], action }.Concat(flags));
     }
-    static string DomainProviderRule(string text)
+    public static string DomainProviderRule(string text)
     {
+        if (text.Any(c => char.IsWhiteSpace(c) || char.IsControl(c) || char.GetUnicodeCategory(c) == System.Globalization.UnicodeCategory.Format)) throw new InvalidDomainRuleException("域名包含空白、控制字符或不可见字符");
         string[] labels = text.ToLowerInvariant().Split('.');
         bool suffix = labels[0] == "+", subdomains = labels[0].Length == 0;
         var body = labels.Skip(suffix || subdomains ? 1 : 0).ToArray();
         if (body.Length == 0 || body.Any(x => x.Length == 0 || x != "*" && (x.IndexOfAny(['*', '+', '?', ',', '/', ':']) >= 0 || x.Any(char.IsWhiteSpace)))
             || Uri.CheckHostName(string.Join('.', body.Select(x => x == "*" ? "wildcard" : x))) != UriHostNameType.Dns)
-            throw new BuildException("domain 名单格式无效；* 必须独占一个域名层级，+ 或空前缀只能位于开头");
+            throw new InvalidDomainRuleException("domain 名单格式无效；* 必须独占一个域名层级，+ 或空前缀只能位于开头");
         if (!body.Contains("*") && !subdomains) return $"{(suffix ? "DOMAIN-SUFFIX" : "DOMAIN")},{string.Join('.', body)},DIRECT";
         static string Escape(string value) => string.Concat(value.Select(c => @"\.+*?()|[]{}^$".Contains(c) ? "\\" + c : c.ToString()));
         string prefix = suffix ? @"(?:[^.]+\.)*" : subdomains ? @"(?:[^.]+\.)+" : "";
         string pattern = "(?i)^" + prefix + string.Join(@"\.", body.Select(x => x == "*" ? "[^.]+" : Escape(x))) + "$";
         return "DOMAIN-REGEX," + pattern + ",DIRECT";
     }
-    public static JsonArray ParseRemote(byte[] raw, JsonObject spec)
+    public static JsonArray ParseRemote(byte[] raw, JsonObject spec, DomainRuleAudit? audit = null, string? source = null)
     {
         string text;
         try { text = new UTF8Encoding(false, true).GetString(raw).TrimStart('\uFEFF'); }
@@ -186,10 +191,12 @@ public static class Rules
             if (significant.StartsWith('<')) throw new BuildException("远程规则返回了 HTML/XML");
             format = Regex.IsMatch(significant, @"^(payload\s*:|rules\s*:|---(?:\s|$)|[\[{]|-\s)") ? "yaml" : "text";
         }
+        string field = "第 {0} 行";
         JsonArray lines; string inputFormat = InputFormat(spec);
         if (format == "yaml")
         {
             var document = YamlData.Parse(text);
+            field = document is JsonObject d && d.ContainsKey("rules") && !d.ContainsKey("payload") ? "rules[{0}]" : "payload[{0}]";
             lines = List(document is JsonObject map ? map["payload"] ?? map["rules"] : document, "远程规则 payload");
             if (!spec.ContainsKey("rule_format")) inputFormat = document is JsonObject doc && !doc.ContainsKey("payload") && doc.ContainsKey("rules") ? "rule" : "match";
         }
@@ -197,32 +204,43 @@ public static class Rules
         else throw new BuildException("电脑端内嵌规则支持 yaml/text，不直接解码 mrs");
         string behavior = S(spec, "behavior", "auto");
         if (behavior is not "auto" and not "classical" and not "domain" and not "ipcidr") throw new BuildException("远程规则 behavior 只支持 auto、classical、domain 或 ipcidr");
-        var entries = new List<string>();
+        var entries = new List<(string Line, int Position)>(); int position = 0;
         foreach (var rawLine in lines)
         {
+            position++;
             if (!IsString(rawLine)) throw new BuildException("远程规则包含非字符串项");
             string line = S(rawLine).Trim();
-            if (line.Length > 0 && !Comment(line)) entries.Add(line);
+            if (line.Length > 0 && !Comment(line)) entries.Add((line, position));
         }
         if (entries.Count == 0) throw new BuildException("远程规则集为空");
         // Inspect the complete list, not the URL or just its first entry. Explicit
         // behavior wins; typed rules and IP/mixed lists keep classical handling.
-        if (behavior == "auto") behavior = entries.All(line => !line.Contains(',') && !NetworkPrefix.TryParse(line, out _)) ? "domain" : "classical";
+        if (behavior == "auto") behavior = entries.All(entry => !entry.Line.Contains(',') && !NetworkPrefix.TryParse(entry.Line, out _)) ? "domain" : "classical";
+        var destinationAudit = audit;
+        audit = audit is null ? null : new DomainRuleAudit();
         var result = new JsonArray();
-        foreach (string line in entries)
+        foreach (var entry in entries)
         {
-            if (behavior == "ipcidr" && !NetworkPrefix.TryParse(line, out _)) throw new BuildException("ipcidr 规则包含非 IP 网段");
-            if (behavior == "domain" && line.Contains(',')) throw new BuildException("domain 规则应只包含域名");
-            string rule;
-            if (behavior == "domain") rule = DomainProviderRule(line);
-            else if (behavior == "ipcidr")
+            string line = entry.Line;
+            try
             {
-                NetworkPrefix.TryParse(line, out var network);
-                rule = $"{(network.IsV6 ? "IP-CIDR6" : "IP-CIDR")},{network},DIRECT" + (B(spec, "no-resolve") ? ",no-resolve" : "");
+                if (behavior == "ipcidr" && !NetworkPrefix.TryParse(line, out _)) throw new BuildException("ipcidr 规则包含非 IP 网段");
+                if (behavior == "domain" && line.Contains(',')) throw new InvalidDomainRuleException("domain 规则应只包含域名");
+                string rule;
+                if (behavior == "domain") rule = DomainProviderRule(line);
+                else if (behavior == "ipcidr")
+                {
+                    NetworkPrefix.TryParse(line, out var network);
+                    rule = $"{(network.IsV6 ? "IP-CIDR6" : "IP-CIDR")},{network},DIRECT" + (B(spec, "no-resolve") ? ",no-resolve" : "");
+                }
+                else rule = WithAction(JsonValue.Create(line), "DIRECT", inputFormat: inputFormat);
+                ValidateSyntax(rule); result.Push(JsonValue.Create(rule));
             }
-            else rule = WithAction(JsonValue.Create(line), "DIRECT", inputFormat: inputFormat);
-            ValidateSyntax(rule); result.Push(JsonValue.Create(rule));
+            catch (InvalidDomainRuleException ex) when (audit is not null)
+            { audit.Record(source ?? S(spec, "name", "规则名单"), string.Format(field, entry.Position), line, ex.Message); }
         }
+        if (destinationAudit is not null && audit is not null)
+            foreach (var warning in audit.Skipped.OfType<JsonObject>()) destinationAudit.Record(S(warning, "source"), S(warning, "position"), S(warning, "rule"), S(warning, "reason"));
         return result;
     }
     static bool Comment(string text) => text.StartsWith('#') || text.StartsWith("//") || text.StartsWith(';');
@@ -258,11 +276,7 @@ public static class Rules
     {
         if (depth > 32) throw new BuildException("逻辑规则嵌套过深");
         var parsed = Canonicalize(rule);
-        if (parsed.Kind is "DOMAIN" or "DOMAIN-SUFFIX")
-        {
-            if (parsed.Value.IndexOfAny(['*', '/', ':', ',']) >= 0 || Uri.CheckHostName(parsed.Value) != UriHostNameType.Dns)
-                throw new BuildException("域名格式无效，请只填域名，不带协议、路径或通配符");
-        }
+        DomainRuleAudit.Condition(rule);
         // Regex payloads use the target core's dialect, not .NET's regex grammar.
         // Their compilation is intentionally left to the complete core check.
         if (parsed.Kind is "AND" or "OR" or "NOT")

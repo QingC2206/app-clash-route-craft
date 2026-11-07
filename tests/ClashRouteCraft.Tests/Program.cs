@@ -497,7 +497,7 @@ await Test("Remote URL validation reads fresh YAML without writing or accepting 
 await Test("Remote URL validation rejects non-rules, invalid conditions and unsupported formats", async () =>
 {
     using var fixture = new Fixture(); using var server = new LocalServer(); var http = O("trust_env", false);
-    foreach (string body in new[] { "<html>login</html>", "# empty\n", "{\"error\":\"denied\"}", "payload:\n - 123", "UNKNOWN,example.com", "IP-CIDR,999.0.0.0/8", "DOMAIN,https://example.com/path", "DOMAIN-SUFFIX,bad domain", "AND,(DOMAIN,example.com)", "DOMAIN,example.com,unexpected,extra" })
+    foreach (string body in new[] { "<html>login</html>", "# empty\n", "{\"error\":\"denied\"}", "payload:\n - 123", "UNKNOWN,example.com", "IP-CIDR,999.0.0.0/8", "AND,(DOMAIN,example.com)", "DOMAIN,example.com,unexpected,extra" })
     { server.Body = body; Check(!(await RemoteRuleValidation.CheckAsync(fixture.Root, O("url", server.Url), http)).Success, "Accepted invalid rule content"); }
     server.Body = "DOMAIN-KEYWORD,uuyc\nGEOIP,LAN,no-resolve\nAND,((DOMAIN,example.com),(NETWORK,UDP))\n";
     Check((await RemoteRuleValidation.CheckAsync(fixture.Root, O("url", server.Url), http)).RuleCount == 3);
@@ -662,9 +662,9 @@ await Test("Parameter preflight finds independent cache residence rule and DNS e
     var residences = session.Residences; Map(residences[0], "residence")["port"] = 0; session.SetResidences(residences);
     var policy = session.Policy; policy["proxy"] = A("DOMAIN-SUFFIX,https://bad.example/path"); M(policy, "dns")["nameserver"] = A("not-a-dns-address"); session.Documents["policy.yaml"].Set(policy);
     var checks = ParameterInspection.Inspect(session).ToArray();
-    foreach (string part in new[] { "缓存", "连接参数", "代理 · 手工", "DNS" }) Check(checks.Any(x => x.Title.Contains(part) && x.State == "fail"), part);
+    foreach (string part in new[] { "缓存", "连接参数", "DNS" }) Check(checks.Any(x => x.Title.Contains(part) && x.State == "fail"), part);
     Check(checks.Where(x => x.State == "fail").All(x => x.Issue is not null));
-    Check(checks.Single(x => x.Title == "代理 · 手工名单").Issue?.Field == "Suffix_proxy", "Invalid domain rule does not locate its actual input field");
+    Check(checks.Any(x => x.Title == "异常域名规则" && x.State == "warning" && x.Message.Contains("proxy[1]") && x.Message.Contains("跳过")), "Skipped domain warning lacks source or location");
 }));
 await Test("Preflight distinguishes missing caches and catches DNS references and disabled sources", () => Sync(() =>
 {
@@ -881,7 +881,7 @@ await Test("Parameter button inspection downloads each enabled rule URL without 
     Check(completed.Length == 3 && completed.Select(x => x.State).SequenceEqual(["fail", "fail", "pass"]));
     Check(completed.Select(x => x.Title).SequenceEqual(["拒绝 URL · 1", "代理 URL · 1", "直连 URL · 1"]));
     Check(completed[0].Message.Contains(invalid.Url) && completed[1].Message.Contains("403") && completed[1].Issue?.Field == "RemoteUrls_proxy");
-    Check(completed[2].Message.Contains(good.Url) && completed[2].Message.Contains("1 条规则"));
+    Check(completed[2].Message.Contains(good.Url) && completed[2].Message.Contains("1 条有效规则"));
     Check(rows.Count(x => x.State == "pending") == 3 && good.Requests == 2 && denied.Requests == 1 && invalid.Requests == 1 && subscriptions.Requests == 0 && disabled.Requests == 0);
     good.Status = 403; rows.Clear(); await foreach (var row in ParameterInspection.InspectAsync(session)) rows.Add(row);
     Check(rows.Single(x => x.Key is not null && x.Title == "直连 URL · 1" && x.State != "pending").State == "fail", "Button accepted stale cached content instead of a live HTTP failure");
@@ -980,6 +980,7 @@ await AsnPolicyRegression.Run(Test);
 await RouterAsnToolsRegression.Run(Test);
 await ResidentialOnlyRegression.Run(Test);
 await StrictRoutingRegression.Run(Test);
+await DomainEntranceRegression.Run(Test);
 Console.WriteLine($"RESULT {passed} passed, {failed} failed"); Environment.ExitCode = failed == 0 ? 0 : 1;
 
 static JsonObject MergeBridge(JsonArray input) { var (rules, report) = Rules.MergeRules(input); return O("rules", rules, "report", report); }

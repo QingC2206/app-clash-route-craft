@@ -24,14 +24,14 @@ static class RouterAsnToolsRegression
                 }
                 string readme = File.ReadAllText(Path.Combine(directory, "router-asn", "README.md"));
                 Check(readme.Contains("sh ./install-router-asn.sh") && !readme.Contains("sh scripts/"), "Guide requires source checkout");
-                byte[] main = File.ReadAllBytes(built.OutputPath);
+                string main = Canonical(YamlData.Read(built.OutputPath));
                 File.Delete(tools[0].Path);
                 string extra = Path.Combine(directory, "router-asn", "router-login.json"); File.WriteAllText(extra, "{\"password\":\"fixture-private-password\"}");
                 string hosts = Path.Combine(directory, "router-asn", "router-known_hosts"); File.WriteAllText(hosts, "fixture-project-host-key");
                 await engine.BuildProjectAsync(f.Root, "SampleOne", new(Offline: true));
                 Check(File.Exists(tools[0].Path) && File.ReadAllText(extra) == "{\"password\":\"fixture-private-password\"}", "Recovery changed private login file");
                 Check(File.ReadAllText(hosts) == "fixture-project-host-key", "Recovery changed project SSH trust records");
-                Check(File.ReadAllBytes(built.OutputPath).SequenceEqual(main), "Tools changed generated YAML");
+                Check(Canonical(YamlData.Read(built.OutputPath)) == main, "Tools changed generated YAML (excluding generation timestamp comments)");
             }
         });
         await test("ASN inspection produces no installation tools or configuration", async () =>

@@ -134,8 +134,9 @@ public static class SubscriptionBaseline
 
     public static List<string> Eligible(JsonArray nodes, JsonObject source, JsonObject selection, string prefix = "")
     {
-        var include = Pattern(S(source, "include", S(selection, "include", JumpInclude)), "机场入口筛选");
-        var exclude = S(source, "exclude", S(selection, "exclude", JumpExclude)) is { Length: > 0 } pattern ? Pattern(pattern, "机场入口筛选") : null;
+        var filters = EntranceFilters.Patterns(source, selection, JumpInclude, JumpExclude);
+        var include = Pattern(filters.Include, "机场入口筛选");
+        var exclude = filters.Exclude is { Length: > 0 } pattern ? Pattern(pattern, "机场入口筛选") : null;
         return nodes.OfType<JsonObject>().Where(SubscriptionRouting.IsProxyNode).Select(x => S(x, "name")).Where(x =>
         {
             string candidate = prefix.Length > 0 && x.StartsWith(prefix, StringComparison.Ordinal) ? x[prefix.Length..] : x;

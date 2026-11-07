@@ -201,7 +201,7 @@ public sealed partial class MainWindow
                     pending["id"] = S(old, "id"); pending["enabled"] = B(old, "enabled", true); pending["include_fallback"] = B(old, "include_fallback");
                     foreach (string key in M(pending, "mappings").Select(x => x.Key).ToArray()) if (M(old, "mappings").ContainsKey(key)) M(pending, "mappings")[key] = M(old, "mappings")[key]?.DeepClone();
                 }
-                preview.Content = Stack(Label(old is null ? "预览完成：确认策略映射后导入。" : ImportedRuleSets.Diff(old, pending)), MappingForm(pending, () => error.Text = ""),
+                preview.Content = Stack(Label(old is null ? "预览完成：确认策略映射后导入。" : ImportedRuleSets.Diff(old, pending)), Label(string.Join("\n", L(pending, "domain_warnings").OfType<JsonObject>().Select(DomainRuleAudit.Message)), true), MappingForm(pending, () => error.Text = ""),
                     AsyncButton("查看导入内容", () => ViewRuleSetAsync(pending, dialog)));
                 sourcePanel.IsExpanded = false;
                 error.Text = "只导入规则与来源说明，不复制订阅 URL、节点和 DNS。更新时可再次选择项目订阅或其他来源。"; apply.IsEnabled = true;

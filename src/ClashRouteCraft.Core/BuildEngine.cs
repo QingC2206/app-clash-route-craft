@@ -184,6 +184,8 @@ public sealed class BuildEngine
             var fetched = Map(raw, "名单读取");
             if (B(fetched, "stale")) progress?.Report(new("名单缓存", S(fetched, "item") + (S(fetched, "reason") == "offline" ? "：当前离线，使用过期缓存" : "：在线更新失败，使用过期缓存；" + S(fetched, "reason")), 5, State: "warning"));
         }
+        foreach (var warning in L(report, "invalid_domain_rules").OfType<JsonObject>()) progress?.Report(new("异常域名规则", DomainRuleAudit.Message(warning), 5, State: "warning"));
+        foreach (var warning in L(report, "unchecked_domain_sources").OfType<JsonObject>()) progress?.Report(new("未检查的规则来源", S(warning, "source") + " · " + S(warning, "position") + "：" + S(warning, "reason"), 5, State: "warning"));
         var outputs = extraOutputs?.ToList() ?? [];
         if (dnsBlob is not null) outputs.Add((dnsTarget!, dnsBlob));
         outputs.AddRange(defaultDns);

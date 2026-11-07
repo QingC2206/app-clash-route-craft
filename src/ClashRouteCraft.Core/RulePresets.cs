@@ -3,8 +3,8 @@ using static ClashRouteCraft.Core.Data;
 
 namespace ClashRouteCraft.Core;
 
-public sealed record RulePreset(string Id, string Category, string Name, string Description, string[] Urls, string[] Domains, string[] Rules);
-public sealed record PresetAppend(JsonObject Policy, int UrlsAdded, int RulesAdded, int Skipped, int CrossGroupMatches);
+public sealed record RulePreset(string Id, string Category, string Name, string Description, string[] Urls, string[] Domains, string[] Rules, JsonArray? DomainWarnings = null);
+public sealed record PresetAppend(JsonObject Policy, int UrlsAdded, int RulesAdded, int Skipped, int CrossGroupMatches, JsonArray DomainWarnings);
 
 /// <summary>A local catalogue of suggestions, copied into existing policy fields on explicit confirmation.</summary>
 public static class RulePresets
@@ -27,17 +27,24 @@ public static class RulePresets
             if (item.Any(x => x.Key is not ("id" or "category" or "name" or "description" or "urls" or "domains" or "rules"))) throw new BuildException("预设项目含未知字段");
             string id = Name(item["id"], "预设 id"), name = Name(item["name"], "预设名称");
             if (!ids.Add(id)) throw new BuildException("规则预设 id 重复：" + id);
-            string[] Texts(string key) => L(item, key).Select(x => IsString(x) && !string.IsNullOrWhiteSpace(S(x)) ? S(x).Trim() : throw new BuildException(name + " 的 " + key + " 应为非空文本列表")).Distinct().ToArray();
+            string[] Texts(string key) => L(item, key).Select(x => IsString(x) && !string.IsNullOrWhiteSpace(S(x)) ? S(x).Trim() : throw new BuildException(name + " 的 " + key + " 应为非空文本列表")).ToArray();
             var urls = Texts("urls"); var domains = Texts("domains"); var rules = Texts("rules");
             foreach (string url in urls) if (!ConfigurationValidation.HttpUrl(url)) throw new BuildException(name + " 的 URL 无效");
-            foreach (string domain in domains)
+            var audit = new DomainRuleAudit();
+            var validDomains = new List<string>(); var validRules = new List<string>();
+            for (int i = 0; i < domains.Length; i++)
             {
-                if (domain.Contains(',') || Uri.CheckHostName(domain) != UriHostNameType.Dns || domain.IndexOfAny(['/', ':', '*', '+']) >= 0) throw new BuildException(name + " 的域名无效；填写裸域名，包含子域名；精确匹配请使用 rules");
-                RulesSyntax("DOMAIN-SUFFIX," + domain);
+                string domain = domains[i];
+                try { DomainRuleAudit.Domain(domain); validDomains.Add(domain); }
+                catch (InvalidDomainRuleException ex) { audit.Record("规则预设 · " + name, $"presets/{id}/domains[{i + 1}]", domain, ex.Message); }
             }
-            foreach (string rule in rules) RulesSyntax(rule);
+            for (int i = 0; i < rules.Length; i++)
+            {
+                try { RulesSyntax(rules[i]); validRules.Add(rules[i]); }
+                catch (InvalidDomainRuleException ex) { audit.Record("规则预设 · " + name, $"presets/{id}/rules[{i + 1}]", rules[i], ex.Message); }
+            }
             if (urls.Length + domains.Length + rules.Length == 0) throw new BuildException(name + " 没有 URL、域名或规则");
-            result.Add(new(id, S(item, "category", "其他"), name, S(item, "description"), urls, domains, rules));
+            result.Add(new(id, S(item, "category", "其他"), name, S(item, "description"), urls, validDomains.ToArray(), validRules.ToArray(), audit.Skipped));
         }
         return result;
     }
@@ -58,16 +65,24 @@ public static class RulePresets
         var manual = L(output, group); output[group] ??= manual;
         var remotes = Rules.RemoteSpecs(output["remote_rules"]).ToList();
         var names = remotes.Select(x => S(x, "name")).ToHashSet();
-        string Key(JsonNode? raw) => ClashRouteCraft.Core.Rules.Canonicalize(ClashRouteCraft.Core.Rules.WithAction(raw, "DIRECT")).Text;
+        string Key(JsonNode? raw)
+        {
+            try { return ClashRouteCraft.Core.Rules.Canonicalize(ClashRouteCraft.Core.Rules.WithAction(raw, "DIRECT")).Text; }
+            catch (InvalidDomainRuleException) { return "invalid:" + Canonical(raw); }
+        }
         var matches = manual.Select(Key).ToHashSet(StringComparer.Ordinal);
         var otherMatches = new HashSet<string>(StringComparer.Ordinal);
         foreach (string other in ProjectOrdering.RuleOrder(policy).Where(x => x != group))
             foreach (var rule in L(policy, other)) otherMatches.Add(Key(rule));
-        int addedUrls = 0, addedRules = 0, skipped = 0, cross = 0;
-        foreach (var preset in selected)
+        int addedUrls = 0, addedRules = 0, skipped = 0, cross = 0; var warnings = new JsonArray();
+        foreach (var originalPreset in selected)
         {
+            if (originalPreset.DomainWarnings is not null) foreach (var warning in originalPreset.DomainWarnings) warnings.Push(warning?.DeepClone());
+            if (originalPreset.Urls.Length + originalPreset.Domains.Length + originalPreset.Rules.Length == 0 && originalPreset.DomainWarnings?.Count > 0) continue;
+            var preset = originalPreset;
             // Validate even callers that construct records without loading the catalogue.
-            Parse(O("version", 1, "presets", A(new JsonNode?[] { O("id", preset.Id, "name", preset.Name, "urls", preset.Urls, "domains", preset.Domains, "rules", preset.Rules) })));
+            preset = Parse(O("version", 1, "presets", A(new JsonNode?[] { O("id", preset.Id, "name", preset.Name, "urls", preset.Urls, "domains", preset.Domains, "rules", preset.Rules) }))).Single();
+            if (preset.DomainWarnings is not null) foreach (var warning in preset.DomainWarnings) warnings.Push(warning?.DeepClone());
             foreach (string url in preset.Urls)
             {
                 if (remotes.Any(x => ProjectOrdering.IsUrlEntry(x) && ProjectOrdering.RemoteGroup(x) == group && S(x, "url") == url)) { skipped++; continue; }
@@ -87,6 +102,6 @@ public static class RulePresets
             }
         }
         output["remote_rules"] = A(remotes);
-        return new(output, addedUrls, addedRules, skipped, cross);
+        return new(output, addedUrls, addedRules, skipped, cross, warnings);
     }
 }

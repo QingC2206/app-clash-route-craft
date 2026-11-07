@@ -3,7 +3,7 @@ using static ClashRouteCraft.Core.Data;
 
 namespace ClashRouteCraft.Core;
 
-public sealed record RemoteRuleCheck(bool Success, int RuleCount, string Message);
+public sealed record RemoteRuleCheck(bool Success, int RuleCount, string Message, int SkippedCount = 0);
 
 public static class RemoteRuleValidation
 {
@@ -21,7 +21,7 @@ public static class RemoteRuleValidation
             using var fetch = new Fetcher(root, options, cancellation: cancellation, useCache: false);
             var result = await fetch.ReadAsync(spec, bytes =>
             {
-                var rules = Rules.ParseRemote(bytes, spec);
+                var rules = Rules.ParseRemote(bytes, spec, fetch.RuleAudit, "URL 名单");
                 for (int i = 0; i < rules.Count; i++)
                     try { cancellation.ThrowIfCancellationRequested(); Rules.ValidateSyntax(S(rules[i])); }
                     catch (BuildException ex) { throw new BuildException($"第 {i + 1} 条规则：{ex.Message}"); }
@@ -29,7 +29,7 @@ public static class RemoteRuleValidation
             }, "URL");
             cancellation.ThrowIfCancellationRequested();
             int count = List(result.Value, "规则").Count;
-            return new(true, count, $"可访问 · 格式通过 · {count} 条规则");
+            return new(true, count, $"可访问 · {count} 条有效规则" + (fetch.RuleAudit.Skipped.Count == 0 ? " · 格式通过" : "\n" + string.Join("\n", fetch.RuleAudit.Skipped.OfType<JsonObject>().Select(DomainRuleAudit.Message))), fetch.RuleAudit.Skipped.Count);
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { throw; }
         catch (BuildException ex) { return new(false, 0, ex.Message); }

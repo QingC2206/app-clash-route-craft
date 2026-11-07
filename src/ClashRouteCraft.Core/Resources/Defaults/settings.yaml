@@ -3,3 +3,5 @@ sources:
   - name: AirportA
     url: ''
     enabled: true
+selection:
+  entrance_region: nearby

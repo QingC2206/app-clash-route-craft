@@ -44,7 +44,7 @@ The catalogue is loaded from `settings/rule-presets.yaml` in the workspace. Miss
 
 The first enabled complete subscription supplies routing conditions and their original order. Other subscriptions contribute nodes without mixing in another rule set. Move subscriptions up or down to choose the rule source.
 
-**机场入口 (Subscription entry)** offers an aggregate group across subscriptions and a group for each subscription. Default filtering includes Hong Kong, Japan, Taiwan, and Singapore; filters and latency checks are configurable. Required node-resolution `hosts` mappings survive caching and generation. Conflicting mappings or alias cycles produce errors instead of silent overwrites.
+**机场入口 (Subscription entry)** offers an aggregate group across subscriptions and a group for each subscription. Choose nearby regions (Hong Kong, Macau, Japan, Taiwan, Singapore, South Korea), nearby regions excluding Hong Kong/Macau, or the United States. New projects default to nearby regions; existing projects retain their custom filters. Matching uses node names, not verified IP geolocation. Exclusion filters and latency checks remain configurable. Required node-resolution `hosts` mappings survive caching and generation. Conflicting mappings or alias cycles produce errors instead of silent overwrites.
 
 ### Optional residential proxies, one proxy exit
 
@@ -162,3 +162,9 @@ Push a `v*` tag matching the application version to validate, build the single A
 [Usage (Chinese)](docs/usage.md) · [ASN setup (Chinese)](docs/router-asn.md) · [Validation (Chinese)](docs/validation.md) · [Report an issue](https://github.com/QingC2206/app-clash-route-craft/issues)
 
 Source code is under the [MIT License](LICENSE). Third-party components retain their own licenses; see [third-party notices](THIRD-PARTY-NOTICES.md).
+
+### Invalid domains and cache checks
+
+Manual rules, primary subscription rules and sub-rules, inline/readable remote text providers, imported sets and presets share hostname validation. Invalid domain rules are skipped with their source, position, reason and original text in preflight, generation logs or reports; no hostname is guessed or repaired. A logical rule containing an invalid domain is skipped as a whole. Opaque MRS sources are explicitly marked unchecked. Later updates to otherwise valid live providers are outside the current audit.
+
+Generation works on in-memory copies of subscription snapshots and never writes filtered rules back into them. Fetching or importing a subscription updates its snapshot. Downloads check HTTP status, size and parseability; SHA-256 is recorded for downloaded and locally read content, and input fingerprints are checked around generation. Without a trusted checksum from the provider, a hash detects changes but does not establish authenticity. Additional MD5 checks are unnecessary.

@@ -31,7 +31,8 @@ public sealed partial class MainWindow
                 var preview = RulePresets.Append(target.Policy, catalogue.Where(x => selected.Contains(x.Id)), Group());
                 status.Text = $"已选 {selected.Count} 个预设；追加 {preview.UrlsAdded} 个 URL、{preview.RulesAdded} 条规则；同组重复跳过 {preview.Skipped} 项。"
                     + (preview.CrossGroupMatches > 0 ? $"\n另有 {preview.CrossGroupMatches} 项也出现在其他组：保留双方，按现有组顺序决定优先级。" : "")
-                    + (extrasDisabled ? "\n个人附加规则目前关闭；可勾选启用，或仅添加并保持停用。" : "");
+                    + (extrasDisabled ? "\n个人附加规则目前关闭；可勾选启用，或仅添加并保持停用。" : "")
+                    + (preview.DomainWarnings.Count > 0 ? "\n" + string.Join("\n", preview.DomainWarnings.OfType<System.Text.Json.Nodes.JsonObject>().Select(DomainRuleAudit.Message)) : "");
                 confirm.IsEnabled = selected.Count > 0;
             }
             catch (Exception ex) { status.Text = SafeMessage(ex); confirm.IsEnabled = false; }
@@ -48,7 +49,7 @@ public sealed partial class MainWindow
                     var pick = Check(preset.Name, selected.Contains(preset.Id), value => { if (value) selected.Add(preset.Id); else selected.Remove(preset.Id); Preview(); });
                     pick.Name = "Preset_" + preset.Id;
                     var detail = string.Join('\n', preset.Urls.Select(x => "URL · " + x).Concat(preset.Domains.Select(x => "域名及子域名 · " + x)).Concat(preset.Rules.Select(x => "规则 · " + x)));
-                    rows.Children.Add(Card("", pick, Label(preset.Description, true, 12), new Expander { Header = $"查看内容 · {preset.Urls.Length} 个 URL / {preset.Domains.Length + preset.Rules.Length} 条规则", HorizontalAlignment = HorizontalAlignment.Stretch, Content = Label(detail, true, 12) }));
+                    rows.Children.Add(Card("", pick, Label(preset.Description, true, 12), Label(string.Join("\n", (preset.DomainWarnings ?? new()).OfType<System.Text.Json.Nodes.JsonObject>().Select(DomainRuleAudit.Message)), true, 12), new Expander { Header = $"查看内容 · {preset.Urls.Length} 个 URL / {preset.Domains.Length + preset.Rules.Length} 条规则", HorizontalAlignment = HorizontalAlignment.Stretch, Content = Label(detail, true, 12) }));
                 }
             }
             if (rows.Children.Count == 0) rows.Children.Add(Label("没有匹配的预设。可修改配置文件后重新加载。", true));
@@ -86,7 +87,7 @@ public sealed partial class MainWindow
             if (extrasDisabled && enable.IsChecked == true) appended.Policy["extra_rules_enabled"] = true;
             Mutate("policy.yaml", doc => { doc.Clear(); foreach (var (key, value) in appended.Policy) doc[key] = value?.DeepClone(); });
             policyTab = "rules"; RenderPage();
-            SetStatus($"已追加 {appended.UrlsAdded} 个 URL、{appended.RulesAdded} 条规则，跳过 {appended.Skipped} 项重复；请保存并生成。");
+            SetStatus($"已追加 {appended.UrlsAdded} 个 URL、{appended.RulesAdded} 条规则，跳过 {appended.Skipped} 项重复、{appended.DomainWarnings.Count} 条异常域名规则；请保存并生成。");
         }
     }
 }

@@ -27,8 +27,10 @@ public sealed partial class MainWindow
             if (exactSection is not null) exactSection.Header = $"精确域名 · DOMAIN（{editor.Count(ManualRuleKind.Exact)} 条）";
             if (moreSection is not null) moreSection.Header = $"更多匹配方式（{editor.Count(ManualRuleKind.Other)} 条）";
             error.IsVisible = false;
+            int position = 0;
             foreach (var rule in editor.Rules)
-                try { Rules.ValidateSyntax(Rules.WithAction(rule, "DIRECT")); }
+                try { position++; Rules.ValidateSyntax(Rules.WithAction(rule, "DIRECT")); }
+                catch (InvalidDomainRuleException ex) { error.Text = $"个人规则 · {group}[{position}]：这条规则因异常将在生成时跳过（{ex.Message}），未自动修正。原规则：{S(rule, Canonical(rule))}"; error.IsVisible = true; break; }
                 catch (BuildException ex) { error.Text = ex.Message; error.IsVisible = true; break; }
         }
         void Apply() { Mutate("policy.yaml", doc => doc[group] = editor.Rules); RefreshSummary(); }
@@ -82,7 +84,7 @@ public sealed partial class MainWindow
             rows.Spacing = 8; double widestUrl = 0;
             foreach (var item in messages)
             {
-                string state = item.Check is null ? "pending" : item.Check.Success ? "pass" : "fail";
+                string state = item.Check is null ? "pending" : item.Check.Success ? item.Check.SkippedCount > 0 ? "warning" : "pass" : "fail";
                 string detail = item.Check?.Message ?? "尚未执行";
                 var statusIcon = CheckStatusIcon(state, $"第 {item.Line} 行：{detail}");
                 statusIcon.Name = "UrlStatus_" + group + "_" + item.Line;
@@ -119,7 +121,7 @@ public sealed partial class MainWindow
             bool Current() => revision == generation && ReferenceEquals(session, currentSession);
             messages.Clear(); messages.AddRange(lines.Select(line => (line.Url, line.Line, (RemoteRuleCheck?)null))); summary.Text = "正在校验…再次点击图标可取消。"; summary.Foreground = Muted; RenderResults(); ToolTip.SetTip(validate!, null); flyout.ShowAt(validate!);
              AutomationProperties.SetName(validate!, "取消 " + title + " URL 校验");
-            int passed = 0;
+            int passed = 0, skippedRules = 0;
             try
             {
                 var available = Rules.RemoteSpecs(currentSession.Policy["remote_rules"]).Where(x => ProjectOrdering.IsUrlEntry(x) && ProjectOrdering.RemoteGroup(x) == group).ToList();
@@ -136,10 +138,10 @@ public sealed partial class MainWindow
                     summary.Text = $"正在校验 {i + 1}/{lines.Length}…再次点击图标可取消。";
                     var result = await Task.Run(() => RemoteRuleValidation.CheckAsync(currentSession.ProjectPath, specs[i], http, cancellation.Token));
                     if (!Current()) return;
-                    if (result.Success) passed++;
+                    if (result.Success) passed++; skippedRules += result.SkippedCount;
                     messages[i] = (lines[i].Url, lines[i].Line, result); RenderResults();
                 }
-                summary.Text = $"校验完成：{passed}/{lines.Length} 通过。";
+                summary.Text = $"校验完成：{passed}/{lines.Length} 通过。" + (skippedRules > 0 ? $"{skippedRules} 条异常域名规则将跳过，请查看明细。" : "");
             }
             catch (OperationCanceledException) { if (Current()) summary.Text = "校验已取消。"; }
             catch (Exception ex) { if (Current()) { summary.Text = SafeMessage(ex); summary.Foreground = Danger; } }

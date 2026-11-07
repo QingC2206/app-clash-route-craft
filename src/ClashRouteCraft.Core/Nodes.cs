@@ -129,8 +129,9 @@ public static class Nodes
     public static List<string> Eligible(JsonArray namespaced, JsonObject source, JsonObject selection)
     {
         string name = S(source, "name");
-        var include = Pattern(S(source, "include", S(selection, "include", Asia)), name);
-        string exclusion = S(source, "exclude", S(selection, "exclude"));
+        var filters = EntranceFilters.Patterns(source, selection, Asia);
+        var include = Pattern(filters.Include, name);
+        string exclusion = filters.Exclude;
         var exclude = exclusion.Length > 0 ? Pattern(exclusion, name) : null;
         int prefix = $"[{name}] ".Length;
         var eligible = namespaced.Select(x => S(Map(x, "节点"), "name"))

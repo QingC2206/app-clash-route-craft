@@ -74,14 +74,15 @@ public static class ImportedRuleSets
             else throw new BuildException("配置中没有 rules 或 payload；只提取规则，不导入节点或 DNS");
         }
         else if (doc is JsonArray array) lines = array;
-        else lines = A(text.Split('\n').Select(x => x.Trim()).Where(x => x.Length > 0 && !x.StartsWith('#') && !x.StartsWith(';') && !x.StartsWith("//")));
+        else lines = A(text.Split('\n'));
         if (mode == "match") full = false;
+        var audit = new DomainRuleAudit();
         var entries = new JsonArray(); var mappings = new JsonObject(); int index = 0;
         foreach (var raw in lines)
         {
             index++; if (raw is null) continue;
             if (!IsString(raw)) throw new BuildException($"第 {index} 条规则不是文本");
-            string line = S(raw).Trim(); if (line.Length == 0 || line.StartsWith('#')) continue;
+            string line = S(raw).Trim(); if (line.Length == 0 || line.StartsWith('#') || line.StartsWith(';') || line.StartsWith("//")) continue;
             try
             {
                 var parts = Rules.Split(line); string type = parts[0].ToUpperInvariant();
@@ -108,12 +109,13 @@ public static class ImportedRuleSets
                 entries.Push(O("match", match, "source_action", action));
                 if (!mappings.ContainsKey(action)) mappings[action] = Nodes.Reserved.Contains(action) ? action : "";
             }
+            catch (InvalidDomainRuleException ex) { audit.Record("导入 · " + name, yaml ? $"rules/payload[{index}]" : $"第 {index} 行", line, ex.Message); }
             catch (BuildException ex) { throw new BuildException($"第 {index} 条规则：{ex.Message}；RULE-SET 等外部引用请先导出为展开的规则文本"); }
         }
-        if (entries.Count == 0) throw new BuildException("没有可导入的规则");
+        if (entries.Count == 0) throw new BuildException(audit.Skipped.Count == 0 ? "没有可导入的规则" : string.Join("\n", audit.Skipped.OfType<JsonObject>().Select(DomainRuleAudit.Message)) + "\n没有剩余的可导入规则");
         return O("id", Guid.NewGuid().ToString("N"), "name", name.Trim(), "enabled", true,
             "source", O("kind", kind, "label", label, "sha256", Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(bytes))),
-            "imported_at", DateTimeOffset.UtcNow.ToString("O"), "include_fallback", false, "mappings", mappings, "rules", entries);
+            "domain_warnings", audit.Skipped, "imported_at", DateTimeOffset.UtcNow.ToString("O"), "include_fallback", false, "mappings", mappings, "rules", entries);
     }
     public static string Diff(JsonObject old, JsonObject updated)
     {
