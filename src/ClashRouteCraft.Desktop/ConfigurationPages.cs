@@ -98,10 +98,9 @@ public sealed partial class MainWindow
                     if (IsBusy) return; session.RemoveSource(index); expandedSource = -1; RenderPage();
                 }); deleteSource.Classes.Add("danger");
                 card.Children.Add(Row(Check("显示链接", false, show => url.PasswordChar = show ? '\0' : '●'), rename, AsyncButton("导入订阅文件…", () => ImportSnapshotAsync(index)), deleteSource));
-                var include = TextInput(S(source, "include", S(M(settings, "selection"), "include", UsesSubscriptionBaseline() ? SubscriptionBaseline.JumpInclude : Nodes.Asia)), value => Change("include", JsonValue.Create(value))); include.Name = "Sourceinclude" + index; include.IsEnabled = regionMode == "custom" && !IsBusy;
-                var exclude = TextInput(S(source, "exclude", S(M(settings, "selection"), "exclude", UsesSubscriptionBaseline() ? SubscriptionBaseline.JumpExclude : "")), value => Change("exclude", JsonValue.Create(value))); exclude.Name = "Sourceexclude" + index;
+                var filters = EntranceFilterFields(source, M(settings, "selection"), "Source", index.ToString(), (key, value) => Change(key, JsonValue.Create(value)));
                 card.Children.Add(new Expander { Header = "此订阅的筛选与请求选项", IsExpanded = sourceAdvanced, HorizontalAlignment = HorizontalAlignment.Stretch,
-                    Content = Stack(Pair(Field("保留节点（正则，可留空）", include), Field("排除节点（正则）", exclude)), Field("请求客户端标识", TextInput(S(source, "user_agent", "clash-verge/v2.4.7"), value => Change("user_agent", JsonValue.Create(value))))) });
+                    Content = Stack(filters, Field("请求客户端标识", TextInput(S(source, "user_agent", "clash-verge/v2.4.7"), value => Change("user_agent", JsonValue.Create(value))))) });
                 var problems = Label("", true, 12); problems.Name = "SourceProblems" + index;
                 updateProblems = () => { problems.Text = string.Join('\n', Issues().Where(x => x.Page == "sources" && x.Field.EndsWith(index.ToString())).Select(x => x.Message)); problems.IsVisible = problems.Text.Length > 0; };
                 updateProblems(); card.Children.Add(problems);
@@ -112,11 +111,36 @@ public sealed partial class MainWindow
         void SetSelection(string key, JsonNode value) => Mutate("settings.yaml", doc => { if (doc["selection"] is null) doc["selection"] = new JsonObject(); M(doc, "selection")[key] = value.DeepClone(); });
         var interval = new NumericUpDown { Value = I(selection, "interval", 300), Minimum = 1, Maximum = 86400, Increment = 30, FormatString = "0" }; interval.ValueChanged += (_, _) => { if (interval.Value is { } value) SetSelection("interval", JsonValue.Create((int)value)!); };
         var tolerance = new NumericUpDown { Value = I(selection, "tolerance", 50), Minimum = 0, Maximum = 10000, Increment = 10, FormatString = "0" }; tolerance.ValueChanged += (_, _) => { if (tolerance.Value is { } value) SetSelection("tolerance", JsonValue.Create((int)value)!); };
-        var globalInclude = TextInput(S(selection, "include", UsesSubscriptionBaseline() ? SubscriptionBaseline.JumpInclude : Nodes.Asia), value => SetSelection("include", JsonValue.Create(value)!)); globalInclude.IsEnabled = regionMode == "custom" && !IsBusy;
-        var globalFilters = Stack(Pair(Field("保留节点（正则）", globalInclude), Field("排除节点（正则）", TextInput(S(selection, "exclude", UsesSubscriptionBaseline() ? SubscriptionBaseline.JumpExclude : ""), value => SetSelection("exclude", JsonValue.Create(value)!)))));
+        var globalFilters = EntranceFilterFields(new JsonObject(), selection, "Global", "", (key, value) => SetSelection(key, JsonValue.Create(value)!));
         globalFilters.Children.Add(Pair(Field("健康检查间隔（秒）", interval), Field("延迟容差（毫秒）", tolerance)));
         content.Children.Add(new Expander { Name = "SourceGlobalFilters", Header = UsesSubscriptionBaseline() ? "机场入口的默认筛选与测速（高级）" : "所有订阅的默认筛选与健康检查（高级）", HorizontalAlignment = HorizontalAlignment.Stretch, Content = globalFilters });
         return content;
+    }
+    StackPanel EntranceFilterFields(JsonObject source, JsonObject selection, string prefix, string suffix, Action<string, string> change)
+    {
+        string mode = EntranceFilters.Mode(selection);
+        string defaultInclude = UsesSubscriptionBaseline() ? SubscriptionBaseline.JumpInclude : Nodes.Asia;
+        string defaultExclude = UsesSubscriptionBaseline() ? SubscriptionBaseline.JumpExclude : "";
+        var patterns = EntranceFilters.Patterns(source, selection, defaultInclude, defaultExclude);
+        var include = TextInput(patterns.Include, value => { if (mode == "custom") change("include", value); });
+        include.Name = prefix + "include" + suffix;
+        include.IsReadOnly |= mode != "custom";
+        include.IsEnabled = !IsBusy;
+        include.TextWrapping = Avalonia.Media.TextWrapping.Wrap;
+        var effectiveExclude = TextInput(patterns.Exclude, _ => { });
+        effectiveExclude.Name = prefix + "EffectiveExclude" + suffix;
+        effectiveExclude.IsReadOnly = true;
+        effectiveExclude.TextWrapping = Avalonia.Media.TextWrapping.Wrap;
+        var exclude = TextInput(S(source, "exclude", S(selection, "exclude", defaultExclude)), value =>
+        {
+            change("exclude", value);
+            var preview = (JsonObject)source.DeepClone(); preview["exclude"] = value;
+            effectiveExclude.Text = EntranceFilters.Patterns(preview, selection, defaultInclude, defaultExclude).Exclude;
+        });
+        exclude.Name = prefix + "exclude" + suffix; exclude.IsEnabled = !IsBusy;
+        var fields = Stack(Pair(Field(mode == "custom" ? "保留节点（正则，可留空）" : "实际保留节点（预设正则，只读）", include), Field("排除节点（自定义正则）", exclude)));
+        if (mode == "nearby-no-hk-mo") fields.Children.Add(Field("实际排除节点（港澳 + 自定义，只读）", effectiveExclude));
+        return fields;
     }
     string SnapshotInfo(JsonObject source)
     {
@@ -171,9 +195,11 @@ public sealed partial class MainWindow
         {
             int index = i; var node = Map(values[i], "住宅"); void Change(string key, JsonNode? value) => MutateResidence(list => Map(list[index], "住宅")[key] = value?.DeepClone());
             var up = Button("↑", () => MoveResidence(index, -1)); up.IsEnabled = index > 0; var down = Button("↓", () => MoveResidence(index, 1)); down.IsEnabled = index < values.Count - 1;
-            var edit = Button(expandedResidence == index ? "收起" : "编辑", () => { expandedResidence = expandedResidence == index ? -1 : index; RenderPage(); }); edit.Name = "EditResidence" + index;
+            var edit = IconButton("EditResidence" + index, expandedResidence == index ? "收起住宅编辑" : "编辑住宅", "M2,11 L11,2 L14,5 L5,14 L1,15 Z M9,4 L12,7", () => { expandedResidence = expandedResidence == index ? -1 : index; RenderPage(); return Task.CompletedTask; });
+            var copy = IconButton("CopyResidence" + index, "复制住宅", "M5,5 L15,5 L15,15 L5,15 Z M1,11 L1,1 L11,1", () => { CopyResidence(index); return Task.CompletedTask; });
+            copy.IsEnabled = edit.IsEnabled = !IsBusy && !session.IsReadOnly;
             var head = new Grid { ColumnDefinitions = new("*,Auto") }; head.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, VerticalAlignment = VerticalAlignment.Center, Children = { SectionTitle($"{index + 1}. {S(node, "name")}"), Label(S(node, "server").Length > 0 ? S(node, "server") + ":" + I(node, "port", 0) : "服务器待填写", true, 12) } });
-            var actions = Row(up, down, ResidenceCheckButton(index), edit); head.Children.Add(actions); Grid.SetColumn(actions, 1); var card = Stack(head);
+            var actions = Row(up, down, ResidenceCheckButton(index), edit, copy); head.Children.Add(actions); Grid.SetColumn(actions, 1); var card = Stack(head);
             if (expandedResidence == index)
             {
                 TextBox Input(string key, string field, bool secret = false) { var input = TextInput(S(node, key), value => Change(key, JsonValue.Create(value)), secret); input.Name = "Residence" + field + index; return input; }

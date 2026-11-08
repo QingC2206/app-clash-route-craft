@@ -26,15 +26,28 @@ static class EntranceUiRegression
         Named<ComboBox>(window, "EntranceRegionPreset").SelectedIndex = 3; Pump();
         check(S(M(window.Session.Settings, "selection"), EntranceFilters.Key) == "us", "US option not stored");
         Named<Button>(window, "EditSource0").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
-        check(!Named<TextBox>(window, "Sourceinclude0").IsEnabled && Named<TextBox>(window, "Sourceinclude0").Text == "Japan", "Preset destroyed original include or leaves dormant editor active");
+        string Effective(string key, bool global = false)
+        {
+            var current = window.Session!.Settings;
+            var patterns = EntranceFilters.Patterns(global ? O() : Map(L(current, "sources")[0], "s"), M(current, "selection"), SubscriptionBaseline.JumpInclude, SubscriptionBaseline.JumpExclude);
+            return key == "include" ? patterns.Include : patterns.Exclude;
+        }
+        check(Named<TextBox>(window, "Sourceinclude0").IsEnabled && Named<TextBox>(window, "Sourceinclude0").IsReadOnly && Named<TextBox>(window, "Sourceinclude0").Text == Effective("include"), "Preset must show selectable read-only effective include");
+        check(Named<TextBox>(window, "Globalinclude").IsEnabled && Named<TextBox>(window, "Globalinclude").IsReadOnly && Named<TextBox>(window, "Globalinclude").Text == Effective("include", true), "Global preset preview differs from compiler");
+        check(S(Map(L(window.Session.Settings, "sources")[0], "s"), "include") == "Japan" && S(M(window.Session.Settings, "selection"), "include") == "香港", "Preview overwrote custom patterns");
         check(Canonical(window.Session.Policy) == policy && Canonical(window.Session.Residences) == residence, "Entrance change mutated rules or residences");
+        window.GetLogicalDescendants().OfType<Expander>().Single(x => Equals(x.Header, "此订阅的筛选与请求选项")).IsExpanded = true; Pump();
+        Named<TextBox>(window, "Sourceinclude0").BringIntoView(); Pump();
         using (var frame = window.CaptureRenderedFrame()) frame!.Save(Path.Combine(output, "entrance-presets.png"));
         Named<ComboBox>(window, "EntranceRegionPreset").SelectedIndex = 2; Pump();
         check(S(M(window.Session.Settings, "selection"), EntranceFilters.Key) == "nearby-no-hk-mo", "HK exclusion option missing");
+        check(Named<TextBox>(window, "SourceEffectiveExclude0").IsReadOnly && Named<TextBox>(window, "SourceEffectiveExclude0").Text == Effective("exclude"), "HK exclusion preview differs from compiler");
+        Named<TextBox>(window, "Sourceexclude0").Text = "test-excluded"; Pump();
+        check(Named<TextBox>(window, "SourceEffectiveExclude0").Text == Effective("exclude"), "Effective exclusion preview did not refresh");
         Named<ComboBox>(window, "EntranceRegionPreset").SelectedIndex = 1; Pump();
         check(S(M(window.Session.Settings, "selection"), EntranceFilters.Key) == "nearby", "Nearby option missing");
         Named<ComboBox>(window, "EntranceRegionPreset").SelectedIndex = 0; Pump();
-        check(Named<TextBox>(window, "Sourceinclude0").IsEnabled && Named<TextBox>(window, "Sourceinclude0").Text == "Japan", "Custom include not restored");
+        check(Named<TextBox>(window, "Sourceinclude0").IsEnabled && !Named<TextBox>(window, "Sourceinclude0").IsReadOnly && Named<TextBox>(window, "Sourceinclude0").Text == "Japan", "Custom include not restored");
         window.Session.Save(); window.Close(); Pump();
         check(S(M(new WorkspaceSession(workspace, "EntranceUi").Settings, "selection"), EntranceFilters.Key) == "custom", "Selection did not persist");
     }

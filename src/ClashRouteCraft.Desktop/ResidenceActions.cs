@@ -9,6 +9,25 @@ namespace ClashRouteCraft.Desktop;
 
 public sealed partial class MainWindow
 {
+    void CopyResidence(int index)
+    {
+        if (IsBusy || session is null || session.IsReadOnly) return;
+        MutateResidence(list =>
+        {
+            var copy = Map(list[index]!.DeepClone(), "住宅");
+            string original = S(copy, "name");
+            string stem = System.Text.RegularExpressions.Regex.Replace(original, @"(?:-Copy(?:-?\d+)?)+$", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (stem.Length == 0) stem = original;
+            var names = list.Select(x => S(Map(x, "住宅"), "name")).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            string name = stem + "-Copy";
+            for (int suffix = 2; names.Contains(name); suffix++) name = stem + "-Copy-" + suffix;
+            copy["name"] = name;
+            list.Insert(index + 1, copy);
+            expandedResidence = index + 1;
+        });
+        RenderPage();
+    }
+
     Button ResidenceCheckButton(int index)
     {
         var owner = session!;

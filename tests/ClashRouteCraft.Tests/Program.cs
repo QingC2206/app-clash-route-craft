@@ -981,6 +981,7 @@ await RouterAsnToolsRegression.Run(Test);
 await ResidentialOnlyRegression.Run(Test);
 await StrictRoutingRegression.Run(Test);
 await DomainEntranceRegression.Run(Test);
+await RemoteBatchRegression.Run(Test);
 Console.WriteLine($"RESULT {passed} passed, {failed} failed"); Environment.ExitCode = failed == 0 ? 0 : 1;
 
 static JsonObject MergeBridge(JsonArray input) { var (rules, report) = Rules.MergeRules(input); return O("rules", rules, "report", report); }

@@ -115,8 +115,10 @@ public sealed partial class MainWindow : Window
         body.Margin = new(24, 0, 24, 20);
         right.Children.Add(new ScrollViewer { Name = "PageScroll", Content = body, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }); mainSurface.Child = right;
         var columns = new Grid { ColumnDefinitions = new("216,*"), Children = { sidebar, mainSurface } }; Grid.SetColumn(mainSurface, 1);
-        var footerGrid = new Grid { ColumnDefinitions = new("Auto,*"), Margin = new(16, 8) }; projectStatus.FontSize = UiMetrics.Supporting; projectStatus.Foreground = Muted; status.FontSize = UiMetrics.Supporting; status.Foreground = Muted; status.TextWrapping = TextWrapping.Wrap; status.HorizontalAlignment = HorizontalAlignment.Right;
-        footerGrid.Children.Add(projectStatus); footerGrid.Children.Add(status); Grid.SetColumn(status, 1); footer.Child = footerGrid; footer.Background = Panel; footer.BorderBrush = Separator; footer.BorderThickness = new(0, 1, 0, 0);
+        var versionLabel = Label("v" + ApplicationVersion, true, UiMetrics.Supporting); versionLabel.Name = "ApplicationVersion";
+        versionLabel.VerticalAlignment = VerticalAlignment.Center; ToolTip.SetTip(versionLabel, "当前程序版本 · ClashRouteCraft " + ApplicationVersion);
+        var footerGrid = new Grid { ColumnDefinitions = new("Auto,*,Auto"), ColumnSpacing = 16, Margin = new(16, 8) }; projectStatus.FontSize = UiMetrics.Supporting; projectStatus.Foreground = Muted; status.FontSize = UiMetrics.Supporting; status.Foreground = Muted; status.TextWrapping = TextWrapping.Wrap; status.HorizontalAlignment = HorizontalAlignment.Right;
+        footerGrid.Children.Add(projectStatus); footerGrid.Children.Add(status); Grid.SetColumn(status, 1); footerGrid.Children.Add(versionLabel); Grid.SetColumn(versionLabel, 2); footer.Child = footerGrid; footer.Background = Panel; footer.BorderBrush = Separator; footer.BorderThickness = new(0, 1, 0, 0);
         var shell = new DockPanel(); DockPanel.SetDock(footer, Dock.Bottom); shell.Children.Add(footer); shell.Children.Add(columns); var overlay = new Grid { Children = { shell, notifications } }; Content = overlay; InitializeNotifications();
         projectPicker.SelectionChanged += async (_, _) =>
         {

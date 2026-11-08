@@ -16,11 +16,20 @@ public sealed class Fetcher : IDisposable
     readonly HttpClient client;
     readonly CancellationToken cancellation;
     readonly bool useCache;
+    readonly bool ownsClient;
 
     public Fetcher(string root, JsonObject options, bool offline = false, CancellationToken cancellation = default, bool useCache = true)
+        : this(root, options, offline, cancellation, useCache, null) { }
+
+    internal Fetcher(string root, JsonObject options, bool offline, CancellationToken cancellation, bool useCache, HttpClient? sharedClient)
     {
         Root = Path.GetFullPath(root); Options = options; this.offline = offline; this.cancellation = cancellation; this.useCache = useCache;
         cache = Resolve(S(options, "cache_dir", Path.Combine(Root, ".cache")));
+        ownsClient = sharedClient is null;
+        client = sharedClient ?? CreateClient(options);
+    }
+    internal static HttpClient CreateClient(JsonObject options)
+    {
         var handler = new SocketsHttpHandler
         {
             UseProxy = B(options, "trust_env", true), ConnectTimeout = TimeSpan.FromSeconds(8),
@@ -31,7 +40,7 @@ public sealed class Fetcher : IDisposable
             if (!Uri.TryCreate(proxy, UriKind.Absolute, out var proxyUri) || proxyUri.Scheme is not "http" and not "https" and not "socks5") throw new BuildException("HTTP 代理地址无效");
             handler.Proxy = new WebProxy(proxyUri); handler.UseProxy = true;
         }
-        client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(Math.Clamp(I(options, "timeout", 30), 1, 300)) };
+        return new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(Math.Clamp(I(options, "timeout", 30), 1, 300)) };
     }
     public string Resolve(string path, string? baseDirectory = null)
     {
@@ -140,5 +149,5 @@ public sealed class Fetcher : IDisposable
         throw new BuildException(useCache ? $"{label} 无法读取且没有可用缓存（{reason}）" : reason);
     }
     static string SValue(JsonNode? node) => S(node);
-    public void Dispose() => client.Dispose();
+    public void Dispose() { if (ownsClient) client.Dispose(); }
 }

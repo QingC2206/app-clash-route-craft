@@ -121,7 +121,7 @@ public sealed partial class MainWindow
             bool Current() => revision == generation && ReferenceEquals(session, currentSession);
             messages.Clear(); messages.AddRange(lines.Select(line => (line.Url, line.Line, (RemoteRuleCheck?)null))); summary.Text = "正在校验…再次点击图标可取消。"; summary.Foreground = Muted; RenderResults(); ToolTip.SetTip(validate!, null); flyout.ShowAt(validate!);
              AutomationProperties.SetName(validate!, "取消 " + title + " URL 校验");
-            int passed = 0, skippedRules = 0;
+            int passed = 0, skippedRules = 0, checkedCount = 0;
             try
             {
                 var available = Rules.RemoteSpecs(currentSession.Policy["remote_rules"]).Where(x => ProjectOrdering.IsUrlEntry(x) && ProjectOrdering.RemoteGroup(x) == group).ToList();
@@ -132,15 +132,18 @@ public sealed partial class MainWindow
                     var spec = (JsonObject)available[match].DeepClone(); available.RemoveAt(match); return spec;
                 }).ToArray();
                 var http = (JsonObject)M(currentSession.Settings, "http").DeepClone();
-                for (int i = 0; i < lines.Length; i++)
+                summary.Text = $"并发校验中：已完成 0/{lines.Length}（最多 4 条同时请求）…再次点击可取消。";
+                await Task.Run(() => RemoteRuleValidation.CheckBatchAsync(currentSession.ProjectPath, specs, http, async (i, result) =>
                 {
-                    cancellation.Token.ThrowIfCancellationRequested();
-                    summary.Text = $"正在校验 {i + 1}/{lines.Length}…再次点击图标可取消。";
-                    var result = await Task.Run(() => RemoteRuleValidation.CheckAsync(currentSession.ProjectPath, specs[i], http, cancellation.Token));
-                    if (!Current()) return;
-                    if (result.Success) passed++; skippedRules += result.SkippedCount;
-                    messages[i] = (lines[i].Url, lines[i].Line, result); RenderResults();
-                }
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        if (!Current() || cancellation.IsCancellationRequested) return;
+                        if (result.Success) passed++; skippedRules += result.SkippedCount; checkedCount++;
+                        summary.Text = $"并发校验中：已完成 {checkedCount}/{lines.Length}…再次点击可取消。";
+                        messages[i] = (lines[i].Url, lines[i].Line, result); RenderResults();
+                    });
+                }, cancellation.Token));
+                if (!Current()) return;
                 summary.Text = $"校验完成：{passed}/{lines.Length} 通过。" + (skippedRules > 0 ? $"{skippedRules} 条异常域名规则将跳过，请查看明细。" : "");
             }
             catch (OperationCanceledException) { if (Current()) summary.Text = "校验已取消。"; }

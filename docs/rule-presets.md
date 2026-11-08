@@ -42,7 +42,21 @@ AI、购物和多数流媒体 URL 使用 [MetaCubeX/meta-rules-dat](https://gith
 
 UU 远程 / ToDesk 提供官网基础域名（`uuyc.163.com`、`todesk.com`），不声称覆盖全部服务连接。常见远程桌面进程名名单适用于运行应用的电脑，路由器无法匹配下游电脑的进程名，因此默认预设没有使用它。P2P 纯 IP 流量仍可能走兜底动作，可根据实际连接补充规则；此功能不修改 UDP 或 QUIC。
 
+## 补充服务
+
+URL 校验每批最多并发 4 个请求，共用 HTTP 连接池。相同 URL 和请求头只下载一次，但每行仍按自己的格式选项校验；失败和异常域名提示按原始行号显示。再次点击可取消。每批实时请求，不使用或写入生成缓存，也没有固定等待或自动重试；单条请求默认超时 15 秒，可由 HTTP 设置调整，校验上限为 30 秒。
+
+预设中的腾讯视频采用 `TencentVideo_No_Resolve.yaml`，与上游 `.list` 的规则和 `no-resolve` 参数保持一致。YAML 与文本名单均受支持，不能只根据扩展名判断内容等价；其他来源切换格式前也应比较实际匹配条件。
+
+补充服务按中国常用、购物与生活、中国流媒体、办公协作、地图出行、存储与远程访问、金融证券分类。小红书、高德地图、长桥和 IBKR 使用 MetaCubeX 的专项域名 URL；淘宝沿用购物组的阿里名单，其范围也包含支付宝等其他阿里业务。已有购物、流媒体和飞书预设不重复新增。
+
+极空间暂未找到可信的独立专项规则 URL，使用 [极空间官网](https://www.zspace.cn/) 可核实的 `zspace.cn`、`zconnect.cn` 基础域名，不引入混杂其他服务的大型直连名单；不保证覆盖全部 P2P 纯 IP 连接。预设支持域名条目，因此无需为此修改生成逻辑。金融服务名单同样只是域名参考，不能保证交易终端所有连接都被覆盖。
+
 ## English
+
+URL checks run at most four requests concurrently and reuse HTTP connections within each batch. Identical URLs and request headers share one download, while parsing options and results remain per row. Checks are fresh, cancellable, and do not read or write generation caches. There is no fixed delay or automatic retry. The default request timeout is 15 seconds, capped at 30 seconds for validation. The Tencent Video preset uses `_No_Resolve.yaml` to preserve the original text list's IP rule semantics.
+
+Xiaohongshu, Amap, Longbridge and IBKR use dedicated MetaCubeX domain-list URLs. Existing shopping, streaming and Feishu entries are reused. Taobao is covered by the broader Alibaba list, which also includes other Alibaba services. ZSpace uses the verified base domains `zspace.cn` and `zconnect.cn` because a reliable standalone rule-list URL was not found; pure-IP P2P connections may require separate rules. Finance presets likewise do not claim complete coverage of trading-terminal connections.
 
 This is a local suggestion catalogue, not a new routing engine. Select presets, choose direct/proxy/block, preview, and confirm to append. Save and regenerate afterward. Cancelling leaves the project intact. Same-group duplicates are skipped; entries in other groups remain, with existing group order deciding precedence. The preview detects identical entries, not every overlapping domain range.
 

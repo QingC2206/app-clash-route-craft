@@ -169,7 +169,8 @@ try
     AvaloniaHeadlessPlatform.ForceRenderTimerTick(2); using (var frame = window.CaptureRenderedFrame()) frame!.Save(Path.Combine(output, "dns-recovery.png"));
     window.Navigate("sources"); Pump();
     var entranceFilters = (Expander)NamedControl("SourceGlobalFilters"); entranceFilters.IsExpanded = true; Pump();
-    Check(entranceFilters.Header?.ToString() == "机场入口的默认筛选与测速（高级）" && entranceFilters.GetVisualDescendants().OfType<TextBox>().Any(x => x.Text == SubscriptionBaseline.JumpInclude), "Entrance defaults missing from UI");
+    string effectiveDefaultInclude = EntranceFilters.Patterns(O(), M(window.Session.Settings, "selection"), SubscriptionBaseline.JumpInclude, SubscriptionBaseline.JumpExclude).Include;
+    Check(entranceFilters.Header?.ToString() == "机场入口的默认筛选与测速（高级）" && entranceFilters.GetLogicalDescendants().OfType<TextBox>().Any(x => x.Text == effectiveDefaultInclude), "Entrance defaults missing from UI");
     Check(ToolTip.GetTip(NamedControl("SourceUp0"))?.ToString() == "上移；第一个启用订阅提供规则", "Rule-source ordering still describes entrance priority");
     window.Navigate("residential"); Pump();
     Check(window.GetVisualDescendants().OfType<TextBlock>().Any(x => x.Text?.Contains("[链式] 节点名") == true && x.Text.Contains("[直连] 节点名")), "Residential path names missing from UI");
@@ -404,9 +405,10 @@ try
         for (int spin = 0; spin < 300 && sourceServer.Requests < 3; spin++) { Pump(); Thread.Sleep(5); } Pump();
         window.GetLogicalDescendants().OfType<Expander>().Single(x => Equals(x.Header, "此订阅的筛选与请求选项")).IsExpanded = true; Pump();
         var busyFilter = (TextBox)NamedControl("Sourceinclude0"); string busyValue = busyFilter.Text ?? "";
+        string busySettings = Canonical(pullSession.Settings);
         Check(busyFilter.IsReadOnly && !NamedButton("SourceName0").IsEnabled, "Busy pull left filters or rename editable");
         busyFilter.Focus(); window.KeyTextInput("discarded-edit"); Pump();
-        Check(busyFilter.Text == busyValue && S(Map(L(pullSession.Settings, "sources")[0], "s"), "include", Nodes.Asia) == busyValue, "Busy input accepted an edit that would be discarded");
+        Check(busyFilter.Text == busyValue && Canonical(pullSession.Settings) == busySettings, "Busy input accepted an edit that would be discarded");
         Check(NamedControl("PageScroll").GetLogicalDescendants().OfType<NumericUpDown>().All(x => !x.IsEnabled), "Busy pull left global options enabled");
         AvaloniaHeadlessPlatform.ForceRenderTimerTick(2); using (var busyFrame = window.CaptureRenderedFrame()) busyFrame!.Save(Path.Combine(output, "subscription-busy-protected.png"));
         ClickNamed("PullSource0");
@@ -753,6 +755,7 @@ try
     AsnUiRegression.Run(workspace, output, Check);
     RulePresetUiRegression.Run(workspace, output, Check);
     EntranceUiRegression.Run(workspace, output, Check);
+    ResidenceCopyUiRegression.Run(workspace, output, Check);
     Console.WriteLine($"RESULT {checks} UI checks passed; screenshots: {output}");
 }
 
