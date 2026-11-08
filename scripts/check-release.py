@@ -58,14 +58,22 @@ for release in manifest:
         init_result = destination / "initialize.json"
         init = subprocess.run([str(directory / "ClashRouteCraft.exe"), "--initialize", "--workspace", str(initialized), "--result", str(init_result)], capture_output=True, timeout=20)
         data = json.loads(init_result.read_text(encoding="utf-8"))
-        assert init.returncode == 0 and data["ok"] and len(data["restored"]) == 4 and len(data["missing_resources"]) == 5
+        expected_templates = {"config/Example/settings.yaml", "config/Example/policy.yaml", "config/Example/residential.yaml",
+                              "settings/rule-defaults.yaml", "settings/rule-presets.yaml"}
+        restored = {path.replace("\\", "/") for path in data["restored"]}
+        assert init.returncode == 0 and data["ok"] and restored == expected_templates and len(data["missing_resources"]) == 5
+        assert all((initialized / path).is_file() for path in expected_templates)
         policy = initialized / "config/Example/policy.yaml"
         policy.unlink()
         custom = initialized / "settings/rule-defaults.yaml"
         custom.write_text("direct: ['DOMAIN,custom.example']\n", encoding="utf-8")
         before = custom.read_bytes()
+        catalogue = initialized / "settings/rule-presets.yaml"
+        catalogue.write_text("version: 1\npresets: []\n", encoding="utf-8")
+        catalogue_before = catalogue.read_bytes()
         init = subprocess.run([str(directory / "ClashRouteCraft.exe"), "--initialize", "--workspace", str(initialized), "--result", str(init_result)], capture_output=True, timeout=20)
         assert init.returncode == 0 and len(json.loads(init_result.read_text(encoding="utf-8"))["restored"]) == 1 and custom.read_bytes() == before
+        assert catalogue.read_bytes() == catalogue_before
         assert not (initialized / "resources").exists()
         print(f"PASS {release['name']}: bilingual README, 7 screenshots, offline links, inventory, SHA-256 and native smoke check after extraction")
 print("RESULT portable distribution verified")
