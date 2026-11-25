@@ -61,7 +61,7 @@ public static class ParameterInspection
         bool strict = StrictRouting.Enabled(policy);
         bool baseline = SubscriptionBaseline.Enabled(policy);
         if (baseline && !B(policy, "extra_rules_enabled", true)) return;
-        ProjectOrdering.RuleOrder(policy); if (!baseline) GeoRules.Mode(policy);
+        ProjectOrdering.RuleOrder(policy); ProjectOrdering.UrlOrder(policy); if (!baseline) GeoRules.Mode(policy);
         void Action(string action)
         {
             string resolved = action switch { "PROXY" => "默认代理", "AIRPORT" => "机场入口", _ => action };
@@ -70,9 +70,14 @@ public static class ParameterInspection
         ImportedRuleSets.Validate(policy, Action);
         foreach (string group in new[] { "direct", "reject", "proxy" })
             foreach (var rule in L(policy, group)) Rules.ValidateSyntax(Rules.WithAction(rule, "DIRECT"));
-        foreach (var raw in L(policy, "first").Concat(L(policy, "supplemental_rules")))
+        foreach (var raw in L(policy, "first"))
         {
-            var entry = Map(raw, "前置或补充规则"); Action(S(entry, "action", "PROXY"));
+            var (match, action) = PriorityRuleEditor.ParseEntry(raw); Action(action);
+            Rules.ValidateSyntax(Rules.WithAction(match, "DIRECT", inputFormat: "match"));
+        }
+        foreach (var raw in L(policy, "supplemental_rules"))
+        {
+            var entry = Map(raw, "补充规则"); Action(S(entry, "action", "PROXY"));
             Rules.ValidateSyntax(Rules.WithAction(entry["match"], "DIRECT", inputFormat: "match"));
         }
         var names = new HashSet<string>();
@@ -210,6 +215,19 @@ public static class ParameterInspection
                 return (protocol is "socks5" or "http" ? "服务器、端口与凭据格式通过；未测试连通性" : "基础字段通过；此协议的专用参数需在生成时由内核校验", protocol is not "socks5" and not "http");
             });
         }
+        if (checkExtras)
+            yield return Evaluate("优先自定义规则", "policy", "PriorityRules", () =>
+            {
+                var first = L(policy, "first");
+                foreach (var raw in first)
+                {
+                    var (match, action) = PriorityRuleEditor.ParseEntry(raw);
+                    string resolved = action switch { "PROXY" => "默认代理", "AIRPORT" => "机场入口", _ => action };
+                    if (!actions.Contains(resolved) && !deferred.Any(resolved.StartsWith)) throw new BuildException("优先自定义规则引用了不存在的代理或分组");
+                    Rules.ValidateSyntax(Rules.WithAction(match, "DIRECT", inputFormat: "match"));
+                }
+                return ($"{first.Count} 条优先规则，按行顺序最先匹配", false);
+            });
         foreach (string group in checkExtras ? new[] { "direct", "reject", "proxy" } : [])
         {
             string title = group == "direct" ? "直连" : group == "reject" ? "拒绝" : "代理";

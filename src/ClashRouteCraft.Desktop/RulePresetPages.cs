@@ -72,7 +72,7 @@ public sealed partial class MainWindow
         var cancel = Button("取消", () => dialog.Close(false)); cancel.Name = "CancelRulePresets";
         var reload = Button("重新加载", Reload); reload.Name = "ReloadRulePresets";
         var open = Button("打开预设配置", () => OpenPath(RulePresets.FilePath(target.Workspace))); open.Name = "OpenRulePresetsFile";
-        var header = Stack(Label("选择预设 → 指定直连 / 代理 / 拒绝 → 确认追加。不会覆盖现有规则或改变组顺序。", true, 13),
+        var header = Stack(Label("选择预设 → 指定直连 / 代理 / 拒绝 → 确认追加。URL 加入第 2 层 URL 名单，域名与规则加入第 3 层普通自定义分流规则；不会覆盖现有规则或改变分层顺序。", true, 13),
             Label("预设来自本地配置文件；更新文件后重新加载即可。URL 内容在校验或生成时读取，添加后与原有 URL 名单使用相同逻辑。", true, 12),
             Label(RulePresets.FilePath(target.Workspace), true, 12), Row(open, reload), search);
         var footer = Stack(status, enable, Row(Label("添加到"), action, confirm, cancel));

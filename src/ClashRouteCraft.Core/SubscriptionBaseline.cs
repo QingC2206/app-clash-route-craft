@@ -48,7 +48,7 @@ public static class SubscriptionBaseline
         if (policy.ContainsKey("asn_policy")) effective["asn_policy"] = policy["asn_policy"]?.DeepClone();
         if (policy.ContainsKey("dns_privacy")) effective["dns_privacy"] = policy["dns_privacy"]?.DeepClone();
         if (B(effective, "extra_rules_enabled"))
-            foreach (string key in new[] { "first", "order", "direct", "reject", "proxy", "remote_rules", "supplemental_rules", "rule_sets" })
+            foreach (string key in new[] { "first", "url_order", "order", "direct", "reject", "proxy", "remote_rules", "supplemental_rules", "rule_sets" })
                 if (policy.ContainsKey(key)) effective[key] = policy[key]?.DeepClone();
         return Map(ExpandEnvironment(effective), "policy");
     }

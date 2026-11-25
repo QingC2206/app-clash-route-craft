@@ -6,6 +6,7 @@ dns_privacy:
   enabled: false
   proxy_exit: residential
 first: []
+url_order: [direct, reject, proxy]
 order: [direct, reject, proxy]
 direct: []
 reject: []

@@ -25,7 +25,7 @@ static class StrictRoutingRegression
             Check(Canonical(config["rules"]) == Canonical(A("DOMAIN-SUFFIX,allowed.example,DIRECT", "DOMAIN-SUFFIX,blocked.example,REJECT", "DOMAIN-SUFFIX,proxy.example," + proxy, "MATCH," + proxy)), "Strict rule ordering or fallback wrong");
             Check(GeoRules.RequiredDatabases(config).Length == 0 && config["dns"] is null, "Strict introduced DNS or databases");
             Check(!L(L(config, "proxy-groups").OfType<JsonObject>().Single(x => S(x, "name") == proxy), "proxies").Any(x => S(x) == "DIRECT"), "Proxy selector allows direct fallback");
-            Check(B(result.Report, "strict_mode") && S(M(result.Report, "rule_merge"), "precedence") == "user_groups_then_proxy" && before == File.ReadAllText(Path.Combine(f.Project, "subscrip/A.yaml")), "Strict lost cache or report flag");
+            Check(B(result.Report, "strict_mode") && S(M(result.Report, "rule_merge"), "precedence") == "priority_url_manual_then_proxy" && before == File.ReadAllText(Path.Combine(f.Project, "subscrip/A.yaml")), "Strict lost cache or report flag");
             policy["strict_mode"] = false; policy["domestic_direct"] = false; f.Write("policy.yaml", policy);
             var restored = await new BuildEngine().BuildProjectAsync(f.Root, "SampleOne", new(Offline: true));
             var restoredConfig = Map(YamlData.Read(restored.OutputPath), "config");

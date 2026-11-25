@@ -265,18 +265,18 @@ public sealed partial class MainWindow
         useSubscription.IsEnabled = !ResidentialOnly() && !strict;
         var strictSwitch = Check("严格模式 · 未命中个人规则的流量全部代理", strict, value => { Mutate("policy.yaml", doc => doc["strict_mode"] = value); RenderPage(); }); strictSwitch.Name = "StrictMode";
         var strictCard = Card("严格模式", strictSwitch,
-            Label("开启后按下方组顺序匹配已启用的个人规则（域名、URL、导入规则）；其余统一走代理出口。跳过订阅规则和国内默认直连，关闭后恢复原设置。", true, 12),
+            Label("开启后按分层顺序匹配已启用的个人规则（1. 优先自定义规则 → 2. URL 名单 → 3. 普通自定义分流规则）；其余统一走代理出口。跳过订阅规则和国内默认直连，关闭后恢复原设置。", true, 12),
             Label("默认关闭。保存并重新生成后生效；只控制进入内核的流量，不改变 DNS、UDP 接管或 QUIC，也不提供路由器停机保护。", true, 12));
-        if (ResidentialOnly()) return Stack(strictCard, Card("无订阅 · 住宅直连", Label("使用个人自定义规则及下方兜底动作，不引入额外域名库。添加并启用订阅后，可恢复使用主订阅规则。DNS 默认由客户端管理。", true, 13)), AsnPolicyCard(), policyTab == "sets" ? RuleSetsForm() : RuleForms());
+        if (ResidentialOnly()) return Stack(strictCard, Card("无订阅 · 住宅直连", Label("按 1. 优先自定义规则 → 2. URL 名单 → 3. 普通自定义分流规则 → 4. 兜底动作 顺序匹配，不引入额外域名库。添加并启用订阅后，可恢复使用主订阅规则。DNS 默认由客户端管理。", true, 13)), AsnPolicyCard(), policyTab == "sets" ? RuleSetsForm() : RuleForms());
         var ordered = (JsonObject)session!.Settings.DeepClone(); ProjectOrdering.NumberSources(ordered);
         string source = SubscriptionBaseline.Primary(ordered) is { } primary ? S(primary, "name") : "尚未启用订阅";
-        return Stack(strictCard, Card("规则来源", useSubscription, Label(strict ? "严格模式已开启：所有订阅仅提供节点及连接依赖，不使用订阅中的直连、代理、拦截或兜底规则。原规则来源选择已保留。" : baseline ? $"当前来源：{source}。使用该订阅的匹配条件和顺序，动作归并为三类；其他订阅只提供节点。自定义规则优先于订阅规则，无需再次导入规则集。" : "当前使用旧的自定义编排。勾选上方即可切换到订阅基线；保留现有配置内容，保存并重新生成后生效。", true, 13)), AsnPolicyCard(), policyTab == "sets" ? RuleSetsForm() : RuleForms());
+        return Stack(strictCard, Card("规则来源", useSubscription, Label(strict ? "严格模式已开启：所有订阅仅提供节点及连接依赖，不使用订阅中的直连、代理、拦截或兜底规则。原规则来源选择已保留。" : baseline ? $"当前主订阅：{source}。作为第 4 层兜底规则基线（保留匹配条件和顺序，动作归并为三类）；其他订阅只提供节点。第 1～3 层个人规则优先于订阅规则，无需再次导入规则集。" : "当前使用旧的自定义编排。勾选上方即可切换到订阅基线；保留现有配置内容，保存并重新生成后生效。", true, 13)), AsnPolicyCard(), policyTab == "sets" ? RuleSetsForm() : RuleForms());
     }
     Control UnifiedRoutingOverview()
     {
-        if (StrictRouting.Enabled(session!.Policy)) return Card("三类分流 · 严格模式", Label("个人规则按组顺序匹配：本地直连 → 当前网络；代理 → 统一代理出口；拦截 → 拒绝连接。未命中 → 统一代理出口。", true, 12));
-        if (ResidentialOnly()) return Card("三类分流", Label("本地直连 → 当前网络；代理 → 住宅出口 → [直连] 住宅节点；拦截 → 拒绝连接。", true, 12), Label("按下方组顺序匹配个人规则，未命中时使用兜底动作。不会创建机场入口，也不会自动降级为网站直连。", true, 12));
-        var help = Label("优先顺序：自定义规则 → 主订阅规则。订阅内部保持原顺序，只归并动作。代理业务统一使用“代理出口”，有住宅时默认住宅，否则使用机场入口。", true, 12); help.Name = "UnifiedRoutingHelp";
+        if (StrictRouting.Enabled(session!.Policy)) return Card("三类分流 · 严格模式", Label("个人规则按三层顺序匹配（1. 优先自定义规则 → 2. URL 名单 → 3. 普通自定义分流规则）：本地直连 → 当前网络；代理 → 统一代理出口；拦截 → 拒绝连接。未命中 → 统一代理出口。", true, 12));
+        if (ResidentialOnly()) return Card("三类分流", Label("本地直连 → 当前网络；代理 → 住宅出口 → [直连] 住宅节点；拦截 → 拒绝连接。", true, 12), Label("按 1. 优先自定义规则 → 2. URL 名单 → 3. 普通自定义分流规则 顺序匹配，未命中时使用第 4 层兜底动作。不会创建机场入口，也不会自动降级为网站直连。", true, 12));
+        var help = Label("优先顺序：1. 优先自定义规则 → 2. URL 规则名单 → 3. 普通自定义分流规则 → 4. 主订阅规则（先命中生效）。订阅内部保持原顺序，只归并动作。代理业务统一使用“代理出口”，有住宅时默认住宅，否则使用机场入口。", true, 12); help.Name = "UnifiedRoutingHelp";
         var card = Card("三类分流", help,
             Label("本地直连 · 使用本机网络，吸收订阅的直连规划。", true, 12),
             Label("代理 · 统一从“代理出口”出站，在客户端面板切换住宅或机场。", true, 12),
@@ -328,46 +328,117 @@ public sealed partial class MainWindow
     }
     Control RuleForms()
     {
-        var policy = session!.Policy; var order = ProjectOrdering.RuleOrder(policy).ToList(); var content = new StackPanel { Spacing = 10 };
+        var policy = session!.Policy;
+        var urlOrder = ProjectOrdering.UrlOrder(policy).ToList();
+        var manualOrder = ProjectOrdering.RuleOrder(policy).ToList();
+        var content = new StackPanel { Spacing = 10 };
         bool baseline = UsesSubscriptionBaseline();
+        bool strict = StrictRouting.Enabled(policy);
         if (baseline)
         {
             content.Children.Add(UnifiedRoutingOverview());
             var extras = Check("启用个人附加规则", B(policy, "extra_rules_enabled", true), value => { Mutate("policy.yaml", doc => doc["extra_rules_enabled"] = value); RenderPage(); }); extras.Name = "EnableExtraRules";
             content.Children.Add(extras);
-            if (!B(policy, "extra_rules_enabled", true)) content.Children.Add(Note(StrictRouting.Enabled(policy) ? "个人规则已停用，严格模式下全部流量使用代理出口；重新启用后个人例外才会生效。" : ResidentialOnly() ? "个人规则已停用，仅使用下方兜底动作。" : "附加规则已停用，内容仍保留。当前完全使用主订阅规则；可随时重新启用。"));
+            if (!B(policy, "extra_rules_enabled", true)) content.Children.Add(Note(strict ? "个人规则已停用，严格模式下全部流量使用代理出口；重新启用后第 1～3 层个人例外才会生效。" : ResidentialOnly() ? "个人规则已停用，仅使用第 4 层兜底动作。" : "附加规则已停用，内容仍保留。当前完全使用第 4 层主订阅规则；可随时重新启用。"));
         }
         string GroupName(string group) => group switch { "direct" => baseline ? "本地直连" : "直连", "reject" => "拦截", _ => "代理" };
-        var orderHint = Label("按组从上到下匹配：上一组的全部规则优先于下一组，包含手工、URL 和已导入规则。", true, 12); orderHint.Name = "RuleOrderHint";
-        ToolTip.SetTip(orderHint, baseline ? "全部自定义规则按下方三组排序，随后匹配主订阅规则。旧 first 和导入规则按实际动作归组，不再单独置顶。组内保留原有相对顺序，冲突时先命中的规则生效。" : "全部自定义规则按下方三组排序，随后匹配国内分流和默认动作。旧 first 和导入规则按实际动作归组；组内保留原有相对顺序，冲突时先命中的规则生效。"); content.Children.Add(orderHint);
+        string layer4Name = strict ? "严格模式固定代理" : baseline ? (ResidentialOnly() ? "兜底动作" : "主订阅自带分流") : "国内分流与兜底动作";
+        var orderHint = Label($"匹配优先级（从上到下，先命中生效）：1. 优先自定义规则 → 2. URL 规则名单 → 3. 普通自定义分流规则 → 4. {layer4Name}", true, 12);
+        orderHint.Name = "RuleOrderHint";
+        ToolTip.SetTip(orderHint, strict
+            ? "第 1 层优先自定义规则按行顺序最先匹配；第 2 层 URL 名单按组顺序展开；第 3 层普通自定义分流规则（含导入规则集）随后按组顺序匹配；未命中时固定走代理出口。"
+            : baseline
+                ? "第 1 层优先自定义规则按行顺序最先匹配；第 2 层 URL 名单按组顺序展开；第 3 层普通自定义分流规则（含已有导入规则集）随后按组顺序匹配；最后进入第 4 层主订阅规则与兜底。"
+                : "第 1 层优先自定义规则按行顺序最先匹配；第 2 层 URL 名单按组顺序展开；第 3 层普通自定义分流规则（含导入规则集）随后按组顺序匹配；最后进入第 4 层国内分流与默认动作。");
+        content.Children.Add(orderHint);
+
+        var customLayers = new StackPanel { Name = "CustomRuleLayers", Spacing = 12 };
+
+        // Layer 1: 优先自定义规则（最先匹配）
+        var layer1 = new StackPanel { Spacing = 6 };
+        layer1.Children.Add(SectionTitle("1. 优先自定义规则（最先匹配）"));
+        layer1.Children.Add(Label("最高优先级例外规则：高于下方全部 URL 名单、普通自定义分流规则与主订阅，严格按行从上到下顺序匹配。", true, 12));
+        layer1.Children.Add(PriorityRuleField(policy));
+        customLayers.Children.Add(layer1);
+
+        // Layer 2: URL 规则名单（次优）
+        var layer2 = new StackPanel { Spacing = 6 };
+        layer2.Children.Add(SectionTitle("2. URL 规则名单（次优）"));
+        layer2.Children.Add(Label("优先于第 3 层普通自定义分流规则与第 4 层主订阅。三组 URL 名单从上到下匹配，可单独调整组顺序，组内按行顺序展开。", true, 12));
+        var urlGroups = new StackPanel { Name = "RemoteRuleGroups", Spacing = 10 };
+        var remotes = Rules.RemoteSpecs(policy["remote_rules"]).ToList();
+        for (int i = 0; i < urlOrder.Count; i++)
+        {
+            int index = i; string group = urlOrder[i];
+            void MoveUrl(int offset)
+            {
+                var current = ProjectOrdering.UrlOrder(session.Policy).ToList();
+                int target = index + offset; if (target < 0 || target >= current.Count) return;
+                (current[index], current[target]) = (current[target], current[index]);
+                Mutate("policy.yaml", doc =>
+                {
+                    doc["url_order"] = A(current);
+                    if (doc["remote_rules"] is not null) doc["remote_rules"] = A(ProjectOrdering.OrderedRemotes(doc).Select(x => (JsonNode?)x));
+                });
+                RenderPage();
+            }
+            urlGroups.Children.Add(RemoteUrlField(group, GroupName(group), remotes, i + 1, MoveUrl, i > 0, i < urlOrder.Count - 1));
+        }
+        layer2.Children.Add(urlGroups);
+        int advanced = remotes.Count(x => !ProjectOrdering.IsUrlEntry(x));
+        if (advanced > 0) layer2.Children.Add(Label($"另有 {advanced} 条高级远程或本地来源（同属第 2 层），保留在高级 YAML 中维护。", true, 12));
+        customLayers.Children.Add(layer2);
+
+        // Layer 3: 普通自定义分流规则
+        var layer3 = new StackPanel { Spacing = 6 };
+        layer3.Children.Add(SectionTitle("3. 普通自定义分流规则"));
+        layer3.Children.Add(Label("在优先自定义规则与 URL 名单之后匹配，优先于第 4 层主订阅。三组手工规则从上到下匹配，可调整组顺序。", true, 12));
+        var manualGroups = new StackPanel { Name = "ManualRuleGroups", Spacing = 10 };
+        for (int i = 0; i < manualOrder.Count; i++)
+        {
+            int index = i; string group = manualOrder[i];
+            void MoveManual(int offset)
+            {
+                var current = ProjectOrdering.RuleOrder(session.Policy).ToList();
+                int target = index + offset; if (target < 0 || target >= current.Count) return;
+                (current[index], current[target]) = (current[target], current[index]);
+                Mutate("policy.yaml", doc =>
+                {
+                    if (!doc.ContainsKey("url_order")) doc["url_order"] = A(ProjectOrdering.UrlOrder(doc));
+                    doc["order"] = A(current);
+                });
+                RenderPage();
+            }
+            var up = IconButton("RuleUp_" + group, "提高" + GroupName(group) + "手工组优先级", "M3,7 L8,2 L13,7 M8,2 L8,14", () => { MoveManual(-1); return Task.CompletedTask; }); up.Name = "RuleUp_" + group; up.IsEnabled = i > 0;
+            var down = IconButton("RuleDown_" + group, "降低" + GroupName(group) + "手工组优先级", "M3,9 L8,14 L13,9 M8,14 L8,2", () => { MoveManual(1); return Task.CompletedTask; }); down.Name = "RuleDown_" + group; down.IsEnabled = i < manualOrder.Count - 1;
+            var groupHeader = new Grid { ColumnDefinitions = new("*,Auto") }; groupHeader.Children.Add(SectionTitle($"3.{i + 1} {GroupName(group)}")); var moves = Row(up, down); groupHeader.Children.Add(moves); Grid.SetColumn(moves, 1);
+            var manual = ManualRuleFields(group, policy, out var lanOption);
+            var fields = Stack();
+            if (lanOption is not null) fields.Children.Add(lanOption);
+            fields.Children.Add(manual);
+            fields.Margin = new(UiMetrics.Inset, 0, 0, 0);
+            manualGroups.Children.Add(Card("", groupHeader, fields));
+        }
+        layer3.Children.Add(manualGroups);
         var imported = ImportedRuleSets.Sets(policy);
         if (!baseline || imported.Count > 0)
         {
             var browse = Button(baseline ? "管理已有规则集" : "查看导入规则集", () => { policyTab = "sets"; RenderPage(); }); browse.Name = "BrowseRuleSets";
-            string hint = baseline ? "保留旧项目已有的附加规则集，可查看、停用或移除。" + (B(policy, "extra_rules_enabled", true) ? "启用的规则集仍优先于主订阅匹配。" : "个人附加规则已关闭，这些规则集暂不生效。") : "以下个人名单优先匹配，导入规则集随后按顺序匹配。分类与搜索不改变执行顺序。";
-            content.Children.Add(Card($"{(baseline ? "已有附加规则集" : "导入规则集")} · {imported.Count} 个 · {imported.OfType<JsonObject>().Sum(x => L(x, "rules").Count):N0} 条", Label(hint, true, 12), browse));
+            string hint = baseline ? "保留旧项目已有的附加规则集（位于第 3 层手工规则之后、主订阅之前），可查看、停用或移除。" + (B(policy, "extra_rules_enabled", true) ? "启用的规则集按列表顺序匹配并保留内部原顺序。" : "个人附加规则已关闭，这些规则集暂不生效。") : "位于第 3 层手工规则之后、第 4 层兜底之前，按列表顺序匹配并保留内部原顺序。";
+            layer3.Children.Add(Card($"{(baseline ? "已有附加规则集" : "导入规则集")} · {imported.Count} 个 · {imported.OfType<JsonObject>().Sum(x => L(x, "rules").Count):N0} 条", Label(hint, true, 12), browse));
         }
-        var groups = new StackPanel { Name = "RemoteRuleGroups", Spacing = 10 }; var remotes = Rules.RemoteSpecs(policy["remote_rules"]).ToList();
-        for (int i = 0; i < order.Count; i++)
-        {
-            int index = i; string group = order[i];
-            void Move(int offset) { var current = ProjectOrdering.RuleOrder(session.Policy).ToList(); int target = index + offset; if (target < 0 || target >= current.Count) return; (current[index], current[target]) = (current[target], current[index]); Mutate("policy.yaml", doc => doc["order"] = A(current)); RenderPage(); }
-            var up = IconButton("RuleUp_" + group, "提高" + GroupName(group) + "组优先级", "M3,7 L8,2 L13,7 M8,2 L8,14", () => { Move(-1); return Task.CompletedTask; }); up.Name = "RuleUp_" + group; up.IsEnabled = i > 0; var down = IconButton("RuleDown_" + group, "降低" + GroupName(group) + "组优先级", "M3,9 L8,14 L13,9 M8,14 L8,2", () => { Move(1); return Task.CompletedTask; }); down.Name = "RuleDown_" + group; down.IsEnabled = i < order.Count - 1;
-            var groupHeader = new Grid { ColumnDefinitions = new("*,Auto") }; groupHeader.Children.Add(SectionTitle($"{i + 1}. {GroupName(group)}")); var moves = Row(up, down); groupHeader.Children.Add(moves); Grid.SetColumn(moves, 1);
-            var manual = ManualRuleFields(group, policy, out var lanOption);
-            var fields = Stack();
-            if (lanOption is not null) fields.Children.Add(lanOption);
-            fields.Children.Add(RemoteUrlField(group, GroupName(group), remotes)); fields.Children.Add(manual);
-            fields.Margin = new(UiMetrics.Inset, 0, 0, 0);
-            groups.Children.Add(Card("", groupHeader, fields));
-        }
+        customLayers.Children.Add(layer3);
+
         policyFocusField = "";
-        content.Children.Add(groups); int advanced = remotes.Count(x => !ProjectOrdering.IsUrlEntry(x)); if (advanced > 0) content.Children.Add(Label($"另有 {advanced} 条高级来源，保留在高级 YAML 中维护。", true, 12));
-        if (baseline) groups.IsEnabled = B(policy, "extra_rules_enabled", true);
-        if (StrictRouting.Enabled(policy))
+        if (baseline) customLayers.IsEnabled = B(policy, "extra_rules_enabled", true);
+        content.Children.Add(customLayers);
+
+        // Layer 4: 主订阅自带分流 / 兜底基线
+        if (strict)
         {
-            ToolTip.SetTip(orderHint, "按组顺序匹配已启用的个人规则，随后固定走代理。跳过订阅规则和国内默认直连。");
-            content.Children.Add(Note("严格模式：未命中固定走代理出口，不自动回退直连。原兜底动作及国内默认直连设置保留，关闭严格模式后恢复。"));
+            var strictFallback = Card("4. 兜底规则 · 严格模式（固定代理）", Label("未命中第 1～3 层个人规则的流量固定走代理出口（MATCH,代理出口），不自动回退直连。原兜底动作及国内默认直连设置保留，关闭严格模式后恢复。", true, 12));
+            strictFallback.Name = "BaselineRuleSection";
+            content.Children.Add(strictFallback);
             return content;
         }
         if (baseline)
@@ -379,9 +450,19 @@ public sealed partial class MainWindow
                 if (!choices.Any(x => Equals(x.Tag, value))) choices.Add(new() { Tag = value, Content = "请重新选择 · " + value });
                 var fallback = new ComboBox { Name = "FinalAction", ItemsSource = choices, SelectedItem = choices.Single(x => Equals(x.Tag, value)), HorizontalAlignment = HorizontalAlignment.Stretch };
                 fallback.SelectionChanged += (_, _) => { if (fallback.SelectedItem is ComboBoxItem { Tag: string action }) Mutate("policy.yaml", doc => doc["final"] = action); };
-                content.Children.Add(Card("未命中名单时", Field("兜底动作", fallback), Label("默认走住宅代理；可明确选择直连或拒绝。不自动添加国内域名库。", true, 12)));
+                var fallbackCard = Card("4. 未命中自定义规则时（兜底动作）", Field("兜底动作", fallback), Label("默认走住宅代理；可明确选择直连或拒绝。不自动添加国内域名库。", true, 12));
+                fallbackCard.Name = "BaselineRuleSection";
+                content.Children.Add(fallbackCard);
             }
-            else content.Children.Add(Note("以上自定义规则优先于订阅规则；所有代理动作共用“代理出口”。订阅的规则依赖和兜底动作保留，DNS 策略单独设置。"));
+            else
+            {
+                var orderedSources = (JsonObject)session!.Settings.DeepClone(); ProjectOrdering.NumberSources(orderedSources);
+                string primaryName = SubscriptionBaseline.Primary(orderedSources) is { } primary ? S(primary, "name") : "尚未启用订阅";
+                var baselineCard = Card("4. 主订阅自带分流规则（兜底基线）",
+                    Label($"当前主订阅：{primaryName}。以上第 1～3 层自定义规则均未命中时，进入主订阅规则并沿用其兜底动作；所有代理动作共用“代理出口”，DNS 策略单独设置。", true, 12));
+                baselineCard.Name = "BaselineRuleSection";
+                content.Children.Add(baselineCard);
+            }
             return content;
         }
         string currentAction = S(policy, "final", "PROXY");
@@ -389,7 +470,9 @@ public sealed partial class MainWindow
         if (!options.Any(x => Equals(x.Tag, currentAction))) options.Add(new() { Tag = currentAction, Content = "已有自定义动作 · " + currentAction });
         var final = new ComboBox { Name = "FinalAction", ItemsSource = options, SelectedItem = options.Single(x => Equals(x.Tag, currentAction)), HorizontalAlignment = HorizontalAlignment.Stretch };
         final.SelectionChanged += (_, _) => { if (final.SelectedItem is ComboBoxItem { Tag: string value } && value != S(session.Policy, "final", "PROXY")) Mutate("policy.yaml", doc => doc["final"] = value); };
-        content.Children.Add(Card("未命中名单时", Check("国内网站默认直连", B(policy, "domestic_direct", true), value => Mutate("policy.yaml", doc => doc["domestic_direct"] = value)), Field("其余流量的默认动作", final)));
+        var customFallback = Card("4. 未命中自定义规则时（国内分流与兜底）", Check("国内网站默认直连", B(policy, "domestic_direct", true), value => Mutate("policy.yaml", doc => doc["domestic_direct"] = value)), Field("其余流量的默认动作", final));
+        customFallback.Name = "BaselineRuleSection";
+        content.Children.Add(customFallback);
         var embedGeo = Check("兼容 MC2 原始数据库：内嵌 GEO / ASN 名单", GeoRules.Mode(policy) == "mc2-inline", value => Mutate("policy.yaml", doc => doc["geo_mode"] = value ? "mc2-inline" : "native"));
         embedGeo.Name = "EmbedGeoForMc2";
         content.Children.Add(new Expander { Header = "GEO 数据（高级）", HorizontalAlignment = HorizontalAlignment.Stretch,

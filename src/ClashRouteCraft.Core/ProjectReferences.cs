@@ -17,7 +17,21 @@ public static class ProjectReferences
         }
         void Action(JsonObject map, string key) { if (map.ContainsKey(key)) map[key] = Value(map[key], replace); }
         Action(policy, "final");
-        foreach (var raw in L(policy, "first")) Action(Map(raw, "前置规则"), "action");
+        var first = L(policy, "first");
+        for (int i = 0; i < first.Count; i++)
+        {
+            if (first[i] is JsonObject map) Action(map, "action");
+            else if (IsString(first[i]))
+            {
+                try
+                {
+                    var (match, action) = PriorityRuleEditor.ParseRuleLine(S(first[i]).Trim());
+                    string updated = Value(JsonValue.Create(action), replace);
+                    if (updated != action) first[i] = JsonValue.Create(Rules.WithAction(JsonValue.Create(match), updated, inputFormat: "match"));
+                }
+                catch (BuildException ex) when (!ex.Message.Contains("环境变量")) { }
+            }
+        }
         foreach (var raw in L(policy, "supplemental_rules")) Action(Map(raw, "补充规则"), "action");
         foreach (var raw in L(policy, "rule_sets"))
         {

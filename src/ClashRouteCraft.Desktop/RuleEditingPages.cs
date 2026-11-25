@@ -14,6 +14,58 @@ public sealed partial class MainWindow
 {
     string policyFocusField = "";
 
+    Control PriorityRuleField(JsonObject policy)
+    {
+        var editor = new PriorityRuleEditor(L(policy, "first"));
+        var countLabel = Label("", true, 12); countLabel.Name = "PriorityRulesCount";
+        var error = Label("", size: 12); error.Name = "PriorityRulesError"; error.Foreground = Danger; error.IsVisible = false;
+        void RefreshSummary()
+        {
+            countLabel.Text = editor.Count == 0
+                ? "当前 0 条（留空则直接进入第 2 层 URL 规则名单）"
+                : $"当前 {editor.Count} 条（不按动作重新分组，直接按行顺序生效）";
+            error.IsVisible = false;
+            int position = 0;
+            foreach (var raw in editor.Rules)
+            {
+                position++;
+                try
+                {
+                    var (match, _) = PriorityRuleEditor.ParseEntry(raw);
+                    Rules.ValidateSyntax(Rules.WithAction(match, "DIRECT", inputFormat: "match"));
+                }
+                catch (InvalidDomainRuleException ex)
+                {
+                    error.Text = $"优先自定义规则 · 第 {position} 行：这条规则因异常将在生成时跳过（{ex.Message}），未自动修正。原规则：{PriorityRuleEditor.Display(raw)}";
+                    error.IsVisible = true; break;
+                }
+                catch (BuildException ex)
+                {
+                    error.Text = $"优先自定义规则 · 第 {position} 行：{ex.Message}";
+                    error.IsVisible = true; break;
+                }
+            }
+        }
+        var input = TextInput(editor.Text, text =>
+        {
+            editor.Replace(text);
+            Mutate("policy.yaml", doc => doc["first"] = editor.Rules);
+            RefreshSummary();
+        }, multiline: true);
+        input.Name = "PriorityRules";
+        input.Watermark = "每行一条完整规则（含动作，按行顺序生效），例如：\nDOMAIN-SUFFIX,todesk.com,DIRECT\nGEOIP,LAN,DIRECT,no-resolve\nAND,((NETWORK,UDP),(DST-PORT,443)),REJECT\nDOMAIN-SUFFIX,claude.ai,PROXY";
+        FitListInput(input);
+        ToolTip.SetTip(input, "支持动作：DIRECT（直连）、PROXY（统一代理出口）、REJECT / REJECT-DROP（拦截）、PASS（继续匹配后续规则）。支持逻辑规则与 no-resolve / src 标志；不能包含 MATCH / FINAL。");
+        RefreshSummary();
+        var card = Card("",
+            countLabel,
+            input,
+            error,
+            Label("支持动作：DIRECT · PROXY · REJECT · REJECT-DROP · PASS（按行顺序生效；不能包含 MATCH / FINAL）。", true, 12));
+        card.Name = "PriorityRulesSection";
+        return card;
+    }
+
     Control ManualRuleFields(string group, JsonObject policy, out Control? lanOption)
     {
         lanOption = null;
@@ -58,7 +110,7 @@ public sealed partial class MainWindow
             });
             lan.Name = "DirectLan";
             ToolTip.SetTip(lan, "添加 GEOIP,LAN,DIRECT,no-resolve：匹配内网和回环目的 IP，不为这条规则额外发起 DNS 查询。关闭只移除本条附加规则，主订阅中的同类规则仍可生效。");
-            var explanation = Label("让路由器、NAS、打印机等内网地址直连，避免误走代理。它属于直连分流规则，与 URL 名单无关。", true, 12); explanation.Name = "DirectLanHelp";
+            var explanation = Label("让路由器、NAS、打印机等内网地址直连，避免误走代理。它属于第 3 层直连规则，与 URL 名单无关；如需高于 URL 名单放行，可写入第 1 层优先自定义规则。", true, 12); explanation.Name = "DirectLanHelp";
             var lanContent = Stack(lan, explanation, Label("例如 192.168.x.x、10.x.x.x、127.0.0.1；回环地址指运行 Mihomo 的设备，MC2 中即路由器。", true, 12)); lanContent.Spacing = 4;
             if (SubscriptionBaseline.Enabled(policy)) lanContent.Children.Add(Label("主订阅若已有同类规则，无需重复补充；关闭个人附加规则时此项也不生效。", true, 12));
             lanOption = lanContent;
@@ -68,7 +120,7 @@ public sealed partial class MainWindow
         RefreshSummary(); return content;
     }
 
-    Control RemoteUrlField(string group, string title, IReadOnlyList<JsonObject> remotes)
+    Control RemoteUrlField(string group, string title, IReadOnlyList<JsonObject> remotes, int ordinal, Action<int> move, bool canMoveUp, bool canMoveDown)
     {
         CancellationTokenSource? running = null;
         int generation = 0;
@@ -159,7 +211,7 @@ public sealed partial class MainWindow
         }
         validate = IconButton("ValidateUrls_" + group, "校验 " + title + " URL 组", "M8,1 A7,7 0 1 0 8,15 A7,7 0 1 0 8,1 M4,8 L7,11 L12,5", Validate);
         flyout.OverlayInputPassThroughElement = validate;
-        var label = Label(title + " URL 组", size: UiMetrics.FieldTitle); label.FontWeight = FontWeight.Medium; label.VerticalAlignment = VerticalAlignment.Center;
+        var label = SectionTitle($"2.{ordinal} {title} URL 组"); label.FontSize = UiMetrics.FieldTitle;
         Button? collapse = null;
         collapse = IconButton("CollapseUrls_" + group, "收起 URL 名单", "M3,6 L8,11 L13,6", () =>
         {
@@ -172,13 +224,18 @@ public sealed partial class MainWindow
         var chevron = (Avalonia.Controls.Shapes.Path)collapse.Content!;
         chevron.Data = (Geometry)Application.Current!.FindResource("DisclosureChevronGeometry")!;
         chevron.RenderTransform = new RotateTransform(180);
-        var header = new Grid { ColumnDefinitions = new("30,*") };
+        var up = IconButton("UrlUp_" + group, "提高" + title + " URL 组优先级", "M3,7 L8,2 L13,7 M8,2 L8,14", () => { move(-1); return Task.CompletedTask; }); up.Name = "UrlUp_" + group; up.IsEnabled = canMoveUp;
+        var down = IconButton("UrlDown_" + group, "降低" + title + " URL 组优先级", "M3,9 L8,14 L13,9 M8,14 L8,2", () => { move(1); return Task.CompletedTask; }); down.Name = "UrlDown_" + group; down.IsEnabled = canMoveDown;
+        var header = new Grid { ColumnDefinitions = new("30,*,Auto") };
         header.Children.Add(collapse);
         var caption = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { label, validate } };
         header.Children.Add(caption); Grid.SetColumn(caption, 1);
+        var moves = Row(up, down);
+        header.Children.Add(moves); Grid.SetColumn(moves, 2);
         FlyoutBase.SetAttachedFlyout(validate, flyout);
         validate.PointerEntered += (_, _) => { if (results.Content is not null) { ToolTip.SetTip(validate, null); ToolTip.SetIsOpen(validate, false); flyout.ShowAt(validate); } };
         urls.DetachedFromVisualTree += (_, _) => { generation++; running?.Cancel(); flyout.Hide(); };
-        var content = Stack(header, urls); content.Spacing = UiMetrics.FieldGap; return content;
+        var content = Stack(header, urls); content.Spacing = UiMetrics.FieldGap;
+        return Card("", content);
     }
 }

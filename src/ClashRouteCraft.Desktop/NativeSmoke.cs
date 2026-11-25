@@ -198,23 +198,29 @@ internal static class NativeSmoke
     {
         var session = new WorkspaceSession(workspace, "EntranceSmoke");
         var imported = ImportedRuleSets.Parse(System.Text.Encoding.UTF8.GetBytes("DOMAIN,native-import-order.example,DIRECT"), "Ordering");
-        var policy = O("rule_source", "subscription", "extra_rules_enabled", true, "order", A("direct", "reject", "proxy"),
+        var policy = O("rule_source", "subscription", "extra_rules_enabled", true,
+            "url_order", A("direct", "reject", "proxy"), "order", A("direct", "reject", "proxy"),
             "first", new System.Text.Json.Nodes.JsonArray(O("match", "DOMAIN,native-group-order.example", "action", "REJECT")),
             "reject", A("DOMAIN,native-import-order.example"),
-            "remote_rules", new System.Text.Json.Nodes.JsonArray(O("name", "DirectList", "file", "direct-order.list", "action", "DIRECT")),
+            "direct", A("DOMAIN,native-group-order.example", "DOMAIN,native-url-vs-manual.example"),
+            "remote_rules", new System.Text.Json.Nodes.JsonArray(
+                O("name", "ProxyList", "file", "proxy-order.list", "action", "PROXY"),
+                O("name", "DirectList", "file", "direct-order.list", "action", "DIRECT")),
             "rule_sets", new System.Text.Json.Nodes.JsonArray(imported));
+        File.WriteAllText(Path.Combine(session.ProjectPath, "proxy-order.list"), "DOMAIN,native-group-order.example\nDOMAIN,native-url-vs-manual.example\n");
         File.WriteAllText(Path.Combine(session.ProjectPath, "direct-order.list"), "DOMAIN,native-group-order.example\n");
         session.Documents["policy.yaml"].Set(policy); session.Save();
-        foreach (var order in new[] { new[] { "direct", "reject", "proxy" }, new[] { "reject", "direct", "proxy" } })
-        {
-            policy["order"] = A(order); session.Documents["policy.yaml"].Set(policy); session.Save();
-            var built = await new BuildEngine().BuildProjectAsync(workspace, "EntranceSmoke", new(Offline: true));
-            var rules = L(Map(YamlData.Read(built.OutputPath), "group order"), "rules").Select(x => S(x)).ToArray();
-            string expected = order[0] == "direct" ? "DIRECT" : "REJECT";
-            if (rules.First(x => x.StartsWith("DOMAIN,native-group-order.example,")) != "DOMAIN,native-group-order.example," + expected
-                || rules.First(x => x.StartsWith("DOMAIN,native-import-order.example,")) != "DOMAIN,native-import-order.example," + expected
-                || rules[^1] != "MATCH,代理出口") throw new BuildException("自定义整组优先级原生自检失败");
-        }
+        var built = await new BuildEngine().BuildProjectAsync(workspace, "EntranceSmoke", new(Offline: true));
+        var rules = L(Map(YamlData.Read(built.OutputPath), "layered order"), "rules").Select(x => S(x)).ToArray();
+        // Layer 1 (first: REJECT) beats Layer 2 (URL: DIRECT/PROXY) beats Layer 3 (manual: DIRECT/REJECT -> imported: DIRECT) beats Layer 4 (subscription)
+        if (rules.First(x => x.StartsWith("DOMAIN,native-group-order.example,")) != "DOMAIN,native-group-order.example,REJECT"
+            || rules.First(x => x.StartsWith("DOMAIN,native-url-vs-manual.example,")) != "DOMAIN,native-url-vs-manual.example,代理出口"
+            || rules.First(x => x.StartsWith("DOMAIN,native-import-order.example,")) != "DOMAIN,native-import-order.example,REJECT"
+            || rules[^1] != "MATCH,代理出口") throw new BuildException("四层分流优先级原生自检失败");
+        var editor = new PriorityRuleEditor(L(policy, "first"));
+        editor.Replace("DOMAIN-SUFFIX,todesk.com,DIRECT\nAND,((NETWORK,UDP),(DST-PORT,443)),REJECT");
+        if (editor.Rules.Count != 2 || S(Map(editor.Rules[0], "first"), "action") != "DIRECT" || S(Map(editor.Rules[1], "first"), "action") != "REJECT")
+            throw new BuildException("优先自定义规则编辑原生自检失败");
     }
     static async Task CheckResidenceProbeAsync()
     {

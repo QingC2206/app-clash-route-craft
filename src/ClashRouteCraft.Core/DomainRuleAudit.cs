@@ -62,7 +62,16 @@ public sealed class DomainRuleAudit
                 if (Check(() => make(entries[i]), source, $"{field}[{i + 1}]", IsString(entries[i]) ? S(entries[i]) : Canonical(entries[i])) is null) entries.RemoveAt(i);
         }
         foreach (string group in new[] { "direct", "proxy", "reject" }) Filter(L(policy, group), "个人规则 · " + group, group, raw => Rules.WithAction(raw, "DIRECT"));
-        foreach (string field in new[] { "first", "supplemental_rules" }) Filter(L(policy, field), "个人规则", field, raw => Rules.WithAction(Map(raw, field)["match"], "DIRECT", inputFormat: "match"));
+        Filter(L(policy, "first"), "优先自定义规则", "first", raw =>
+        {
+            try
+            {
+                var (match, _) = PriorityRuleEditor.ParseEntry(raw);
+                return Rules.WithAction(match, "DIRECT", inputFormat: "match");
+            }
+            catch (BuildException ex) when (ex is not InvalidDomainRuleException) { return "PASS"; }
+        });
+        Filter(L(policy, "supplemental_rules"), "个人规则", "supplemental_rules", raw => Rules.WithAction(Map(raw, "supplemental_rules")["match"], "DIRECT", inputFormat: "match"));
         foreach (var set in L(policy, "rule_sets").OfType<JsonObject>().Where(x => B(x, "enabled", true)))
         {
             foreach (var warning in L(set, "domain_warnings").OfType<JsonObject>()) Record(S(warning, "source"), S(warning, "position"), S(warning, "rule"), S(warning, "reason"));

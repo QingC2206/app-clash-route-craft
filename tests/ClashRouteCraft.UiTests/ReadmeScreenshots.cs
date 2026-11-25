@@ -29,6 +29,8 @@ static class ReadmeScreenshots
             O("name", "住宅示例", "type", "socks5", "server", "192.0.2.10", "port", 1080, "username", "demo-user", "password", "example-only", "udp", true) }));
         var policy = session.Policy;
         policy["rule_source"] = "subscription";
+        policy["first"] = A(new JsonNode?[] { O("match", "DOMAIN-SUFFIX,priority.example", "action", "DIRECT") });
+        policy["url_order"] = A("direct", "proxy", "reject");
         policy["order"] = A("direct", "proxy", "reject");
         policy["direct"] = A("DOMAIN-SUFFIX,local.example", "DOMAIN-SUFFIX,media.example");
         policy["proxy"] = A("DOMAIN-SUFFIX,global.example");
@@ -69,7 +71,7 @@ static class ReadmeScreenshots
             Click("ToggleFlow");
             window.Height = 1100; Pump();
             // Keep real controls and their ordering intact; scroll within the tab only.
-            var groups = window.GetVisualDescendants().OfType<StackPanel>().Single(x => x.Name == "RemoteRuleGroups");
+            var groups = window.GetVisualDescendants().OfType<StackPanel>().Single(x => x.Name == "ManualRuleGroups");
             foreach (var expander in groups.GetVisualDescendants().OfType<Expander>()) expander.IsExpanded = false;
             groups.GetVisualDescendants().OfType<Expander>().First(x => x.Header?.ToString()?.StartsWith("域名及其子域名") == true).IsExpanded = true;
             foreach (string group in new[] { "direct", "proxy", "reject" }) Click("CollapseUrls_" + group);

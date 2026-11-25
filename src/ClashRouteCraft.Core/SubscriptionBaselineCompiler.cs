@@ -141,25 +141,35 @@ public static class SubscriptionBaselineCompiler
         {
             if (asn.Include(sourceId, label, rule)) rules.Push(rule);
         }
+        int priorityCount = 0, urlCount = 0, manualCount = 0;
         if (B(policy, "extra_rules_enabled", true))
         {
-            foreach (var raw in L(policy, "first")) { var entry = Map(raw, "前置规则"); Add(Rules.WithAction(entry["match"], Action(entry["action"]), inputFormat: "match"), "manual:first", "手工 · 旧前置规则"); }
-            foreach (string group in ProjectOrdering.RuleOrder(policy))
-                foreach (var rule in L(policy, group)) Add(Rules.WithAction(rule, Action(JsonValue.Create(group switch { "direct" => "DIRECT", "reject" => "REJECT", _ => "PROXY" }))), "manual:" + group, "手工 · " + (group switch { "direct" => "直连", "reject" => "拦截", _ => "代理" }));
+            // Layer 1: 高优先级自定义规则（按行原顺序，最先匹配）
+            foreach (var raw in L(policy, "first"))
+            {
+                var (match, action) = PriorityRuleEditor.ParseEntry(raw);
+                Add(Rules.WithAction(match, Action(JsonValue.Create(action)), inputFormat: "match"), "manual:first", "优先自定义规则");
+            }
+            priorityCount = rules.Count;
+            // Layer 2: URL 规则名单（次优，按 url_order 组顺序及组内 URL 顺序）
             foreach (var remote in ProjectOrdering.OrderedRemotes(policy).Where(x => B(x, "enabled", true)))
             {
-                var loaded = await fetch.ReadAsync(remote, bytes => Rules.ParseRemote(bytes, remote, fetch.RuleAudit, "附加名单 · " + S(remote, "name")), S(remote, "name"), Path.GetDirectoryName(policyPath));
+                var loaded = await fetch.ReadAsync(remote, bytes => Rules.ParseRemote(bytes, remote, fetch.RuleAudit, "URL 名单 · " + S(remote, "name")), S(remote, "name"), Path.GetDirectoryName(policyPath));
                 var entries = List(loaded.Value, "远程附加规则"); string action = Action(remote["action"]);
-                foreach (var rule in entries) Add(Rules.WithAction(rule, action, inputFormat: "rule"), AsnPolicy.RemoteId(remote), "附加来源 · " + S(remote, "name"));
+                foreach (var rule in entries) Add(Rules.WithAction(rule, action, inputFormat: "rule"), AsnPolicy.RemoteId(remote), "URL 来源 · " + S(remote, "name"));
                 remoteSummaries.Push(O("name", S(remote, "name"), "rules", entries.Count, "action", action));
             }
+            urlCount = rules.Count - priorityCount;
+            // Layer 3: 普通自定义分流规则（手工直连/拦截/代理按 order 组顺序，其后为导入规则集）
+            foreach (string group in ProjectOrdering.RuleOrder(policy))
+                foreach (var rule in L(policy, group)) Add(Rules.WithAction(rule, Action(JsonValue.Create(group switch { "direct" => "DIRECT", "reject" => "REJECT", _ => "PROXY" }))), "manual:" + group, "手工 · " + (group switch { "direct" => "直连", "reject" => "拦截", _ => "代理" }));
             foreach (var set in ImportedRuleSets.Sets(policy).OfType<JsonObject>().Where(x => B(x, "enabled", true)))
                 foreach (var entry in L(set, "rules").OfType<JsonObject>().Where(x => ImportedRuleSets.Included(set, x)))
                 {
                     if (S(entry, "match") == "MATCH") throw new BuildException("附加规则集不能使用 MATCH 覆盖整个订阅，请关闭该规则集的兜底规则");
                     Add(ImportedRuleSets.Rule(entry, Action(JsonValue.Create(ImportedRuleSets.Target(set, entry)))), "imported:" + S(set, "id"), "导入规则集 · " + S(set, "name", S(set, "id")));
                 }
-            rules = ProjectOrdering.OrderCustomRules(policy, rules);
+            manualCount = rules.Count - priorityCount - urlCount;
         }
         int extraCount = rules.Count;
         if (rules.Any(x => Rules.SplitFull(S(x))[0] is "MATCH" or "FINAL")) throw new BuildException("附加规则不能使用 MATCH / FINAL 覆盖整个订阅，请删除或停用附加兜底规则");
@@ -181,7 +191,12 @@ public static class SubscriptionBaselineCompiler
             "geo_mode", "subscription", "required_geodata", GeoRules.RequiredDatabases(configuration),
             "proxy_count", proxies.Count, "rule_count", SubscriptionBaseline.RuleCount(configuration), "contains_subscription_urls", false,
             "dns", O("configured", dnsExit.Length > 0, "enabled", dnsExit.Length > 0, "source", dnsExit.Length > 0 ? "privacy" : "client", "proxy_exit", dnsExit, "proxy_references", ProfileCompiler.ValidateDns(configuration)),
-            "rule_merge", O("precedence", strict ? "user_groups_then_proxy" : "user_groups_then_primary_subscription", "group_order", B(policy, "extra_rules_enabled", true) ? A(ProjectOrdering.RuleOrder(policy)) : new JsonArray(), "input_count", rules.Count, "duplicates_removed", 0));
+            "rule_merge", O("precedence", strict ? "priority_url_manual_then_proxy" : "priority_url_manual_then_primary_subscription",
+                "layers", A("priority", "url", "manual", strict ? "proxy" : standalone ? "final" : "primary_subscription"),
+                "url_order", B(policy, "extra_rules_enabled", true) ? A(ProjectOrdering.UrlOrder(policy)) : new JsonArray(),
+                "group_order", B(policy, "extra_rules_enabled", true) ? A(ProjectOrdering.RuleOrder(policy)) : new JsonArray(),
+                "priority_rule_count", priorityCount, "url_rule_count", urlCount, "manual_rule_count", manualCount,
+                "input_count", rules.Count, "duplicates_removed", 0));
         report["asn"] = asn.Report(configuration, ConfigurationValidation.Target(settings));
         fetch.RuleAudit.AddReport(report);
         report["entrance_region"] = EntranceFilters.Mode(selection);

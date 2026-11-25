@@ -34,7 +34,7 @@ Off by default; save and regenerate to apply. Turning it off restores the previo
 
 ### Editable rule presets
 
-Under routing, select **添加规则预设 (Add rule presets)**, choose one or more entries, select direct/proxy/block, and confirm. Entries are appended to the existing rule groups; same-group duplicates are skipped, and cross-group conflicts keep the existing group priority. Save and regenerate to apply. Subscription, node and DNS settings stay intact.
+Under routing, select **添加规则预设 (Add rule presets)**, choose one or more entries, select direct/proxy/block, and confirm. Preset URLs are appended to Layer 2 (URL rule lists) and domains/rules to Layer 3 (normal custom rules); same-group duplicates are skipped, and cross-group conflicts follow the layered priority order. Save and regenerate to apply. Subscription, node and DNS settings stay intact.
 
 The catalogue is loaded from `settings/rule-presets.yaml` in the workspace. Missing files are restored from a public embedded template; upgrades preserve custom edits. Each entry can combine rule-list URLs, domain suffixes and explicit match conditions. Edit the file and click **重新加载 (Reload)**. Built-in references cover AI, commonly used Chinese services, Chinese streaming and basic remote-access domains. See the [catalogue schema and limits](docs/rule-presets.md).
 
@@ -60,17 +60,22 @@ Proxied traffic uses **代理出口 (Proxy exit)**. In the client dashboard, cho
 
 “Direct” on a residential node describes **how the residential proxy is reached**. It differs from the routing action `DIRECT`. Residential UDP and TLS settings are preserved; availability depends on the provider and connection path.
 
-### Three routing actions; your rules come first
+### Three routing actions; four-layer rule priority
 
 ![Subscription baseline, ASN dependency controls and three routing actions](docs/screenshots/routing.png)
 
 Subscription actions become **local direct, proxy, and block**. Rejection and ad-blocking rules become block actions. Proxied traffic shares one exit. Unmatched traffic keeps the primary subscription's final action, without an additional catch-all policy group.
 
-![Custom direct, proxy and block groups with priority controls](docs/screenshots/custom-rules.png)
+![Four-layer routing rules: priority rules, URL lists and normal custom groups](docs/screenshots/custom-rules.png)
 
-Matching order is **all custom rules → primary subscription rules**. Custom groups run from top to bottom. Every manual, URL-based, and existing imported rule in a higher group precedes the next group. Use the arrows to reorder groups. Conflicting fallback actions are not removed through deduplication, and continuation semantics such as `PASS` are preserved.
+Matching follows the exact top-to-bottom four-layer hierarchy (first match wins):
 
-For example, to allow a domain covered by a block rule, place its direct or proxy group above the block group. You can also disable custom additions while keeping their contents for later use.
+1. **Priority custom rules**: Highest-priority exceptions (`DIRECT` / `PROXY` / `REJECT` / `REJECT-DROP` / `PASS`) evaluated strictly in listed line order without regrouping by action.
+2. **URL rule lists**: Direct / proxy / block URL groups ordered independently with up/down controls, evaluated line-by-line within each group.
+3. **Normal custom rules**: Direct / proxy / block manual rule groups (ordered independently with up/down controls), followed by any enabled imported rule sets preserving their internal order.
+4. **Primary subscription rules**: Remaining routing conditions and fallback action from the primary enabled subscription.
+
+Conflicting fallback actions are not removed through deduplication, and continuation semantics such as `PASS` are preserved. You can also disable custom additions while keeping their contents for later use.
 
 **保存为 Example 规则 (Save as Example rules)** and **应用 Example 规则 (Apply Example rules)** reuse rule templates while preserving subscriptions, nodes, and DNS. Advanced custom mode imports rule sets from files, URLs, pasted text, or fetched subscriptions with policy mapping. The subscription baseline does not require re-importing its own rules.
 

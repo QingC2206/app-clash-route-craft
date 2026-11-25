@@ -78,27 +78,38 @@ public static class ProfileCompiler
         {
             string id = asnId ?? (stage == "manual" ? source.Replace("manual.", "manual:") : "manual:" + stage);
             string manualKind = stage == "manual" ? source[7..] : stage;
-            string label = asnLabel ?? "手工 · " + (manualKind switch { "direct" => "直连", "reject" => "拦截", "proxy" => "代理", "first" => "旧前置规则", "supplemental" => "补充规则", _ => manualKind });
+            string label = asnLabel ?? (manualKind == "first" ? "优先自定义规则" : "手工 · " + (manualKind switch { "direct" => "直连", "reject" => "拦截", "proxy" => "代理", "supplemental" => "补充规则", _ => manualKind }));
             if (asn.Include(id, label, rule)) candidates.Push(O("rule", rule, "source", source, "stage", stage));
         }
+        // Layer 1: 高优先级自定义规则（按行原顺序，最先匹配）
         int number = 0;
-        foreach (var raw in L(policy, "first")) { number++; var entry = Map(raw, "first rule"); AddRule(Rules.WithAction(entry["match"], Action(entry["action"]), inputFormat: "match"), $"first[{number}]", "first"); }
-        var orderNames = ProjectOrdering.RuleOrder(policy);
-        foreach (string group in orderNames)
+        foreach (var raw in L(policy, "first"))
         {
-            string target = Action(JsonValue.Create(group switch { "direct" => "DIRECT", "reject" => "REJECT", _ => "PROXY" }));
-            foreach (var rule in L(policy, group)) AddRule(Rules.WithAction(rule, target), "manual." + group, "manual");
+            number++;
+            var (match, action) = PriorityRuleEditor.ParseEntry(raw);
+            AddRule(Rules.WithAction(match, Action(JsonValue.Create(action)), inputFormat: "match"), $"first[{number}]", "first");
         }
+        int priorityCount = candidates.Count;
+        // Layer 2: URL / 远程规则名单（次优，按 url_order 组顺序及组内顺序）
+        var urlOrderNames = ProjectOrdering.UrlOrder(policy);
         var remoteSummaries = new JsonArray(); var remoteNames = new HashSet<string>();
         foreach (var remote in ProjectOrdering.OrderedRemotes(policy))
         {
             cancellation.ThrowIfCancellationRequested(); if (!B(remote, "enabled", true)) continue;
             string name = Name(remote["name"], "远程规则集"); if (!remoteNames.Add(name)) throw new BuildException("启用的远程规则集名称不能重复");
             string target = Action(remote["action"]);
-            var loaded = await fetch.ReadAsync(remote, bytes => Rules.ParseRemote(bytes, remote, fetch.RuleAudit, "附加名单 · " + S(remote, "name")), "规则·" + name, Path.GetDirectoryName(policyPath));
+            var loaded = await fetch.ReadAsync(remote, bytes => Rules.ParseRemote(bytes, remote, fetch.RuleAudit, "URL 名单 · " + S(remote, "name")), "规则·" + name, Path.GetDirectoryName(policyPath));
             var entries = List(loaded.Value, "远程规则");
-            foreach (var entry in entries) AddRule(Rules.WithAction(entry, target, inputFormat: "rule"), name, "remote", AsnPolicy.RemoteId(remote), "附加来源 · " + name);
+            foreach (var entry in entries) AddRule(Rules.WithAction(entry, target, inputFormat: "rule"), name, "remote", AsnPolicy.RemoteId(remote), "URL 来源 · " + name);
             remoteSummaries.Push(O("name", name, "rules", entries.Count, "action", target));
+        }
+        int urlCount = candidates.Count - priorityCount;
+        // Layer 3: 普通自定义分流规则（手工直连/拦截/代理按 order 组顺序，其后为导入规则集与补充规则）
+        var orderNames = ProjectOrdering.RuleOrder(policy);
+        foreach (string group in orderNames)
+        {
+            string target = Action(JsonValue.Create(group switch { "direct" => "DIRECT", "reject" => "REJECT", _ => "PROXY" }));
+            foreach (var rule in L(policy, group)) AddRule(Rules.WithAction(rule, target), "manual." + group, "manual");
         }
         foreach (var raw in L(policy, "rule_sets"))
         {
@@ -111,14 +122,19 @@ public static class ProfileCompiler
         }
         number = 0;
         foreach (var raw in L(policy, "supplemental_rules")) { number++; var entry = Map(raw, "补充规则"); AddRule(Rules.WithAction(entry["match"], Action(entry["action"]), inputFormat: "match"), $"supplemental[{number}]", "supplemental"); }
-        candidates = ProjectOrdering.OrderCustomRules(policy, candidates, entry => S(Map(entry, "自定义规则"), "rule"));
+        int manualCount = candidates.Count - priorityCount - urlCount;
         if (strict && candidates.Any(x => Rules.SplitFull(S(Map(x, "规则"), "rule"))[0] is "MATCH" or "FINAL")) throw new BuildException("严格模式的个人规则不能包含 MATCH / FINAL；未命中流量固定走代理");
         if (!strict && B(policy, "domestic_direct", true))
             foreach (string rule in new[] { "GEOSITE,geolocation-!cn," + Action(JsonValue.Create("PROXY")), "GEOSITE,CN,DIRECT", "GEOIP,CN,DIRECT" }) AddRule(rule, "domestic", "baseline");
         AddRule("MATCH," + Action(strict ? JsonValue.Create("PROXY") : policy["final"]), "final", "final");
         var (rules, mergeReport) = Rules.MergeRules(candidates);
-        mergeReport["precedence"] = "user_groups_then_fallback";
+        mergeReport["precedence"] = "priority_url_manual_then_fallback";
+        mergeReport["layers"] = A("priority", "url", "manual", strict ? "proxy" : "fallback");
+        mergeReport["url_order"] = A(urlOrderNames);
         mergeReport["group_order"] = A(orderNames);
+        mergeReport["priority_rule_count"] = priorityCount;
+        mergeReport["url_rule_count"] = urlCount;
+        mergeReport["manual_rule_count"] = manualCount;
         var runtime = M(settings, "runtime");
         if (runtime.Any(x => new[] { "proxies", "proxy-providers", "proxy-groups", "rules", "rule-providers" }.Contains(x.Key))) throw new BuildException("runtime 不能覆盖生成器管理的代理、分组和规则字段");
         var configuration = Merge(O("mixed-port", 7890, "allow-lan", false, "mode", "rule", "log-level", "info", "ipv6", false, "geodata-mode", true, "geodata-loader", "memconservative", "profile", O("store-selected", true)), runtime);
@@ -150,7 +166,7 @@ public static class ProfileCompiler
             "dns", O("configured", configuration.ContainsKey("dns"), "enabled", B(M(configuration, "dns"), "enable"), "source", dnsExit.Length > 0 ? "privacy" : "policy.yaml", "proxy_exit", dnsExit, "proxy_references", references));
         if (dnsRouting is not null) report["dns_routing"] = dnsRouting;
         report["strict_mode"] = strict;
-        if (strict) M(report, "rule_merge")["precedence"] = "user_groups_then_proxy";
+        if (strict) M(report, "rule_merge")["precedence"] = "priority_url_manual_then_proxy";
         report["asn"] = asn.Report(configuration, ConfigurationValidation.Target(settings));
         fetch.RuleAudit.AddReport(report);
         report["entrance_region"] = EntranceFilters.Mode(selection);

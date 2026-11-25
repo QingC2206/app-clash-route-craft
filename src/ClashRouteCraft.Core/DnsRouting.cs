@@ -70,6 +70,6 @@ public static class DnsRouting
         dns["nameserver-policy"] = ordered;
         return O("enabled", true, "precedence", "user_domain_rules_then_dns_policy_then_default", "projected_rules", projected,
             "provider_count", groups, "pass_skipped", pass, "connection_rules_skipped", skipped,
-            "scope", "Domain-only conditions in first/manual/remote/imported/supplemental order. Connection-dependent rules stay in traffic routing; DIRECT re-resolves via direct-nameserver.");
+            "scope", "Domain-only conditions in first/remote/manual/imported/supplemental order. Connection-dependent rules stay in traffic routing; DIRECT re-resolves via direct-nameserver.");
     }
 }

@@ -32,24 +32,28 @@ static class DnsRoutingRegression
             Check(I(report, "pass_skipped", 0) == 1 && L(report, "connection_rules_skipped").Count == 4);
             return Task.CompletedTask;
         });
-        await test("DNS generation follows edited manual and remote priority and refreshes paired output", async () =>
+        await test("DNS generation follows 4-layer priority (priority > remote > manual) and refreshes paired output", async () =>
         {
             using var f = new Fixture(); var policy = new WorkspaceSession(f.Root, "SampleOne").Policy;
             policy["dns_follow_rules"] = true; policy["dns"] = Dns();
+            policy["first"] = new JsonArray(O("match", "DOMAIN,top.example", "action", "PROXY"));
             policy["order"] = A("proxy", "direct", "reject");
             f.Write("list.yaml", O("payload", A("*.remote.example", "exact.remote.example")));
             policy["remote_rules"] = A(new JsonNode?[] { O("name", "domains", "file", "list.yaml", "action", "DIRECT") });
             f.Write("policy.yaml", policy);
             var built = await new BuildEngine().BuildProjectAsync(f.Root, "SampleOne", new(Offline: true));
             var config = Map(YamlData.Read(built.OutputPath), "config");
-            Check(S(L(Map(M(config, "rule-providers").First().Value, "provider"), "payload")[0]) == "DOMAIN-SUFFIX,proxy.example");
-            Check(M(config, "rule-providers").SelectMany(x => L(Map(x.Value, "provider"), "payload")).Any(x => S(x) == @"DOMAIN-REGEX,(?i)^[^.]+\.remote\.example$"));
+            var projected = M(config, "rule-providers").SelectMany(x => L(Map(x.Value, "provider"), "payload").Select(v => S(v))).ToList();
+            Check(projected[0] == "DOMAIN,top.example", "Layer 1 priority rule not first in DNS routing");
+            Check(projected.IndexOf(@"DOMAIN-REGEX,(?i)^[^.]+\.remote\.example$") > 0 && projected.IndexOf(@"DOMAIN-REGEX,(?i)^[^.]+\.remote\.example$") < projected.IndexOf("DOMAIN-SUFFIX,proxy.example"), "Layer 2 remote rule did not precede Layer 3 manual rule in DNS routing");
+            Check(projected.IndexOf("DOMAIN-SUFFIX,proxy.example") < projected.IndexOf("DOMAIN-SUFFIX,example.cn"), "Layer 3 manual order ignored in DNS routing");
             var fragment = Map(YamlData.Read(Path.ChangeExtension(built.OutputPath, ".MC2DNS.yaml")), "fragment");
             Check(Canonical(M(M(fragment, "dns"), "nameserver-policy")) == Canonical(M(M(config, "dns"), "nameserver-policy")));
             policy["order"] = A("direct", "proxy", "reject"); f.Write("policy.yaml", policy);
             built = await new BuildEngine().BuildProjectAsync(f.Root, "SampleOne", new(Offline: true));
             config = Map(YamlData.Read(built.OutputPath), "config");
-            Check(S(L(Map(M(config, "rule-providers").First().Value, "provider"), "payload")[0]) == "DOMAIN-SUFFIX,example.cn");
+            projected = M(config, "rule-providers").SelectMany(x => L(Map(x.Value, "provider"), "payload").Select(v => S(v))).ToList();
+            Check(projected.IndexOf("DOMAIN-SUFFIX,example.cn") < projected.IndexOf("DOMAIN-SUFFIX,proxy.example"), "Edited Layer 3 manual order did not update DNS routing");
             Check(B(M(built.Report, "dns_routing"), "enabled"));
         });
         await test("DNS projection is opt-in and rejects missing resolver pools without replacing outputs", async () =>
